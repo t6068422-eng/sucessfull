@@ -392,6 +392,24 @@ async function startServer() {
   });
 
   // Daily Bonus
+  app.get("/api/daily/status", (req, res) => {
+    const { userId } = req.query;
+    const today = new Date().toISOString().split('T')[0];
+    const claim = db.prepare("SELECT * FROM daily_claims WHERE user_id = ? AND claim_date = ?").get(userId, today);
+    
+    const lastClaim = db.prepare("SELECT * FROM daily_claims WHERE user_id = ? ORDER BY claim_date DESC LIMIT 1").get(userId) as any;
+    let streak = 0;
+    if (lastClaim) {
+      const lastDate = new Date(lastClaim.claim_date);
+      const diff = Math.floor((new Date(today).getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
+      if (diff === 0) streak = lastClaim.streak;
+      else if (diff === 1) streak = lastClaim.streak;
+      else streak = 0;
+    }
+
+    res.json({ claimed: !!claim, streak });
+  });
+
   app.post("/api/daily/claim", (req, res) => {
     const { userId } = req.body;
     const today = new Date().toISOString().split('T')[0];
@@ -403,14 +421,15 @@ async function startServer() {
     let streak = 1;
     if (lastClaim) {
       const lastDate = new Date(lastClaim.claim_date);
-      const diff = (new Date(today).getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24);
+      const diff = Math.floor((new Date(today).getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
       if (diff === 1) streak = lastClaim.streak + 1;
+      else if (diff === 0) return res.status(400).json({ message: "Already claimed today" });
     }
 
     const reward = [10, 20, 30, 40, 50, 75, 100][(streak - 1) % 7];
     
     db.prepare("INSERT INTO daily_claims (user_id, claim_date, streak) VALUES (?, ?, ?)").run(userId, today, streak);
-    db.prepare("UPDATE users SET coins = coins + ? WHERE id = ?").run(reward, userId);
+    db.prepare("UPDATE users SET coins = coins + ?, total_earned = total_earned + ? WHERE id = ?").run(reward, reward, userId);
     
     res.json({ success: true, reward, streak });
   });

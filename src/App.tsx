@@ -1089,9 +1089,21 @@ const GamesPage = ({ onWin, onPlay, user }: { onWin: (amount: number) => void, o
   );
 };
 
-const DailyBonusPage = ({ onClaim }: { onClaim: (amount: number) => void, key?: string }) => {
+const DailyBonusPage = ({ userId, onClaim }: { userId: string, onClaim: (amount: number) => void, key?: string }) => {
   const [claimed, setClaimed] = useState(false);
+  const [streak, setStreak] = useState(0);
   const days = [10, 20, 30, 40, 50, 75, 100];
+
+  useEffect(() => {
+    if (userId) {
+      fetch(`/api/daily/status?userId=${userId}`)
+        .then(r => r.json())
+        .then(data => {
+          setClaimed(data.claimed);
+          setStreak(data.streak);
+        });
+    }
+  }, [userId]);
 
   return (
     <div className="pt-24 pb-12 px-4 max-w-3xl mx-auto">
@@ -1103,26 +1115,36 @@ const DailyBonusPage = ({ onClaim }: { onClaim: (amount: number) => void, key?: 
 
       <div className="glass p-8 rounded-[2.5rem] border-white/10">
         <div className="grid grid-cols-4 md:grid-cols-7 gap-3 mb-10">
-          {days.map((reward, i) => (
-            <div key={i} className={`flex flex-col items-center gap-2 p-4 rounded-2xl border ${i === 0 ? 'bg-primary/20 border-primary' : 'bg-white/5 border-white/5'}`}>
-              <div className="text-[10px] uppercase font-bold text-white/40">Day {i + 1}</div>
-              <Coins size={20} className={i === 0 ? 'text-primary' : 'text-white/20'} />
-              <div className="font-bold text-sm">{reward}</div>
-            </div>
-          ))}
+          {days.map((reward, i) => {
+            const isCurrent = i === (streak % 7);
+            const isCompleted = i < (streak % 7);
+            return (
+              <div key={i} className={`flex flex-col items-center gap-2 p-4 rounded-2xl border transition-all ${
+                isCurrent ? 'bg-primary/20 border-primary scale-110 shadow-lg shadow-primary/10' : 
+                isCompleted ? 'bg-emerald-500/10 border-emerald-500/20 opacity-60' : 
+                'bg-white/5 border-white/5'
+              }`}>
+                <div className="text-[10px] uppercase font-bold text-white/40">Day {i + 1}</div>
+                <Coins size={20} className={isCurrent ? 'text-primary' : isCompleted ? 'text-emerald-500' : 'text-white/20'} />
+                <div className="font-bold text-sm">{reward}</div>
+              </div>
+            );
+          })}
         </div>
 
         <button
           disabled={claimed}
           onClick={() => {
-            setClaimed(true);
             onClaim(10);
+            setClaimed(true);
           }}
           className="w-full py-5 gradient-bg rounded-2xl font-bold text-lg shadow-xl shadow-primary/20 disabled:opacity-50 disabled:grayscale transition-all"
         >
           {claimed ? 'Claimed Today' : 'Claim Daily Reward'}
         </button>
-        <p className="text-center text-xs text-white/40 mt-6">Next claim available in 23h 59m</p>
+        <p className="text-center text-xs text-white/40 mt-6">
+          {claimed ? 'Come back tomorrow for your next reward!' : 'Claim your reward now to keep your streak!'}
+        </p>
       </div>
       <AdComponent placement="daily_bottom" />
     </div>
@@ -2051,21 +2073,31 @@ export default function App() {
 
   const handleDailyClaim = async () => {
     if (!user) return;
-    const res = await fetch('/api/daily/claim', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: user.id })
-    });
-    const data = await res.json();
-    if (res.ok) {
-      handleEarn(data.reward, 'Daily Bonus');
-      alert(`Success! You claimed ${data.reward} TLX. Streak: ${data.streak} days!`);
-    } else {
-      if (data.message === "Already claimed today") {
-        alert("Reward already received! Come back tomorrow.");
+    try {
+      const res = await fetch('/api/daily/claim', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        // Update local state directly since backend already updated DB
+        setUser(prev => prev ? { 
+          ...prev, 
+          coins: prev.coins + data.reward, 
+          total_earned: prev.total_earned + data.reward 
+        } : null);
+        alert(`Success! You claimed ${data.reward} TLX. Streak: ${data.streak} days!`);
       } else {
-        alert(data.message || 'Failed to claim');
+        if (data.message === "Already claimed today") {
+          alert("Reward already received! Come back tomorrow.");
+        } else {
+          alert(data.message || 'Failed to claim');
+        }
       }
+    } catch (err) {
+      console.error('Daily claim error:', err);
+      alert('Failed to connect to server');
     }
   };
 
@@ -2105,7 +2137,7 @@ export default function App() {
             onPlay={() => handleEarn(-10, 'Game Entry')}
             onWin={(amt) => handleEarn(amt, 'Game Win')} 
           />}
-          {activeTab === 'daily' && <DailyBonusPage key="daily" onClaim={handleDailyClaim} />}
+          {activeTab === 'daily' && <DailyBonusPage key="daily" userId={user?.id || ''} onClaim={handleDailyClaim} />}
           {activeTab === 'coupons' && <CouponsPage key="coupons" onRedeem={(code) => {
             fetch('/api/coupons/redeem', {
               method: 'POST',
