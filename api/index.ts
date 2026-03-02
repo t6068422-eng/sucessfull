@@ -519,7 +519,7 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     // Serve static files from the dist directory
-    const distPath = path.join(__dirname, "dist");
+    const distPath = path.join(__dirname, "..", "dist");
     app.use(express.static(distPath));
     
     // For any other request, serve the index.html
