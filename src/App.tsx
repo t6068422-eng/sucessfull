@@ -1019,14 +1019,10 @@ const SnakeGame = ({ onWin }: { onWin: (amount: number) => void }) => {
   );
 };
 
-const GamesPage = ({ onWin, onPlay, user }: { onWin: (amount: number) => void, onPlay: () => Promise<boolean>, user: User | null, key?: string }) => {
+const GamesPage = ({ onWin, onPlay, user }: { onWin: (amount: number) => void, onPlay: () => Promise<boolean>, user: User, key?: string }) => {
   const [activeGame, setActiveGame] = useState<string | null>(null);
 
   const handleGameSelect = (gameId: string) => {
-    if (!user) {
-      alert('Please wait while loading your profile...');
-      return;
-    }
     setActiveGame(gameId);
   };
 
@@ -1077,7 +1073,7 @@ const GamesPage = ({ onWin, onPlay, user }: { onWin: (amount: number) => void, o
           </button>
           <div className="flex justify-center">
             {activeGame === 'snake' && <SnakeGame onWin={onWin} />}
-            {activeGame === 'spin' && <SpinWheel onWin={onWin} onPlay={onPlay} userId={user?.id || ''} />}
+            {activeGame === 'spin' && <SpinWheel onWin={onWin} onPlay={onPlay} userId={user.id} />}
             {activeGame === 'memory' && <MemoryMatch onWin={onWin} onPlay={onPlay} />}
             {activeGame === 'guess' && <NumberGuess onWin={onWin} onPlay={onPlay} />}
             {activeGame === 'quiz' && <QuizChallenge onWin={onWin} onPlay={onPlay} />}
@@ -2022,18 +2018,32 @@ export default function App() {
 
     const init = async () => {
       try {
-        const [userData, settingsData] = await Promise.all([
+        const [userRes, settingsRes] = await Promise.all([
           fetch('/api/user/sync', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ userId })
-          }).then(r => r.json()),
-          fetch('/api/settings').then(r => r.json())
+          }),
+          fetch('/api/settings')
         ]);
-        setUser(userData);
-        setSettings(settingsData);
+
+        if (!userRes.ok || !settingsRes.ok) {
+          throw new Error('Failed to load initial data');
+        }
+
+        const userData = await userRes.json();
+        const settingsData = await settingsRes.json();
+
+        if (userData && userData.id) {
+          setUser(userData);
+          setSettings(settingsData);
+        } else {
+          throw new Error('Invalid user data received');
+        }
       } catch (err) {
         console.error('Init error:', err);
+        // Don't set loading to false yet, or show an error state
+        alert('Connection error. Please check your internet and try again.');
       } finally {
         setIsInitialLoading(false);
       }
@@ -2150,7 +2160,7 @@ export default function App() {
     }
   }, [settings.head_custom_code]);
 
-  if (isInitialLoading) {
+  if (isInitialLoading || !user) {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4">
         <motion.div 
@@ -2163,9 +2173,19 @@ export default function App() {
           </div>
           <div className="text-center">
             <h1 className="text-3xl font-display font-bold mb-2 tracking-tight">TeleX</h1>
-            <div className="flex items-center gap-2 text-white/40 font-mono text-sm">
-              <RefreshCw size={14} className="animate-spin" />
-              <span>Loading your profile...</span>
+            <div className="flex flex-col items-center gap-4">
+              <div className="flex items-center gap-2 text-white/40 font-mono text-sm">
+                <RefreshCw size={14} className="animate-spin" />
+                <span>{isInitialLoading ? 'Loading your profile...' : 'Failed to load profile'}</span>
+              </div>
+              {!isInitialLoading && !user && (
+                <button 
+                  onClick={() => window.location.reload()}
+                  className="px-6 py-2 bg-white/10 hover:bg-white/20 rounded-xl text-sm font-bold transition-all"
+                >
+                  Retry Connection
+                </button>
+              )}
             </div>
           </div>
         </motion.div>
@@ -2187,17 +2207,17 @@ export default function App() {
         <AdComponent placement="top" />
         <AnimatePresence mode="wait">
           {activeTab === 'home' && <HomePage key="home" onStart={setActiveTab} onRefresh={refreshData} />}
-          {activeTab === 'tasks' && <TasksPage key="tasks" tasks={tasks as any} onComplete={(t) => handleEarn(t.reward, `Task: ${t.title}`, t.id)} onRefresh={refreshData} />}
-          {activeTab === 'games' && <GamesPage key="games" user={user} 
+          {activeTab === 'tasks' && user && <TasksPage key="tasks" tasks={tasks as any} onComplete={(t) => handleEarn(t.reward, `Task: ${t.title}`, t.id)} onRefresh={refreshData} />}
+          {activeTab === 'games' && user && <GamesPage key="games" user={user} 
             onPlay={() => handleEarn(-10, 'Game Entry')}
             onWin={(amt) => handleEarn(amt, 'Game Win')} 
           />}
-          {activeTab === 'daily' && <DailyBonusPage key="daily" userId={user?.id || ''} onClaim={handleDailyClaim} />}
-          {activeTab === 'coupons' && <CouponsPage key="coupons" onRedeem={(code) => {
+          {activeTab === 'daily' && user && <DailyBonusPage key="daily" userId={user.id} onClaim={handleDailyClaim} />}
+          {activeTab === 'coupons' && user && <CouponsPage key="coupons" onRedeem={(code) => {
             fetch('/api/coupons/redeem', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ code, userId: user?.id })
+              body: JSON.stringify({ code, userId: user.id })
             }).then(r => r.json()).then(data => {
               if (data.success) {
                 handleEarn(data.reward, `Coupon: ${code}`);
@@ -2211,19 +2231,16 @@ export default function App() {
               }
             });
           }} />}
-          {activeTab === 'withdraw' && <WithdrawPage key="withdraw" coins={user?.coins || 0} settings={settings} />}
+          {activeTab === 'withdraw' && user && <WithdrawPage key="withdraw" coins={user.coins} settings={settings} />}
         </AnimatePresence>
         <AdComponent placement="bottom" />
       </main>
 
-      {/* Admin Button */}
+      {/* Admin Button - Hidden from normal users */}
       <button 
         onClick={() => setShowAdminLogin(true)}
-        className="fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-full text-xs font-bold text-white/40 hover:text-white transition-all hover:scale-110 hover:shadow-lg hover:shadow-primary/20"
-      >
-        <Lock size={14} />
-        Admin Access
-      </button>
+        className="fixed bottom-0 right-0 z-[100] w-4 h-4 bg-transparent cursor-default"
+      />
 
       {/* Admin Login Modal */}
       <AnimatePresence>
