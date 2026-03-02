@@ -1089,9 +1089,10 @@ const GamesPage = ({ onWin, onPlay, user }: { onWin: (amount: number) => void, o
   );
 };
 
-const DailyBonusPage = ({ userId, onClaim }: { userId: string, onClaim: (amount: number) => void, key?: string }) => {
+const DailyBonusPage = ({ userId, onClaim }: { userId: string, onClaim: () => Promise<boolean>, key?: string }) => {
   const [claimed, setClaimed] = useState(false);
   const [streak, setStreak] = useState(0);
+  const [isClaiming, setIsClaiming] = useState(false);
   const days = [10, 20, 30, 40, 50, 75, 100];
 
   useEffect(() => {
@@ -1104,6 +1105,16 @@ const DailyBonusPage = ({ userId, onClaim }: { userId: string, onClaim: (amount:
         });
     }
   }, [userId]);
+
+  const handleClaimClick = async () => {
+    setIsClaiming(true);
+    const success = await onClaim();
+    if (success) {
+      setClaimed(true);
+      setStreak(prev => prev + 1);
+    }
+    setIsClaiming(false);
+  };
 
   return (
     <div className="pt-24 pb-12 px-4 max-w-3xl mx-auto">
@@ -1133,14 +1144,20 @@ const DailyBonusPage = ({ userId, onClaim }: { userId: string, onClaim: (amount:
         </div>
 
         <button
-          disabled={claimed}
-          onClick={() => {
-            onClaim(10);
-            setClaimed(true);
-          }}
-          className="w-full py-5 gradient-bg rounded-2xl font-bold text-lg shadow-xl shadow-primary/20 disabled:opacity-50 disabled:grayscale transition-all"
+          disabled={claimed || isClaiming}
+          onClick={handleClaimClick}
+          className="w-full py-5 gradient-bg rounded-2xl font-bold text-lg shadow-xl shadow-primary/20 disabled:opacity-50 disabled:grayscale transition-all flex items-center justify-center gap-2"
         >
-          {claimed ? 'Claimed Today' : 'Claim Daily Reward'}
+          {isClaiming ? (
+            <>
+              <RefreshCw size={20} className="animate-spin" />
+              Claiming...
+            </>
+          ) : claimed ? (
+            'Claimed Today'
+          ) : (
+            'Claim Daily Reward'
+          )}
         </button>
         <p className="text-center text-xs text-white/40 mt-6">
           {claimed ? 'Come back tomorrow for your next reward!' : 'Claim your reward now to keep your streak!'}
@@ -1971,6 +1988,7 @@ export default function App() {
   const [showAdminLogin, setShowAdminLogin] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminCreds, setAdminCreds] = useState({ email: '', password: '' });
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
 
   const refreshData = async () => {
     const userId = localStorage.getItem('telex_user_id');
@@ -2002,14 +2020,26 @@ export default function App() {
       localStorage.setItem('telex_user_id', userId);
     }
 
-    // Initial sync
-    fetch('/api/user/sync', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId })
-    }).then(r => r.json()).then(setUser);
+    const init = async () => {
+      try {
+        const [userData, settingsData] = await Promise.all([
+          fetch('/api/user/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId })
+          }).then(r => r.json()),
+          fetch('/api/settings').then(r => r.json())
+        ]);
+        setUser(userData);
+        setSettings(settingsData);
+      } catch (err) {
+        console.error('Init error:', err);
+      } finally {
+        setIsInitialLoading(false);
+      }
+    };
 
-    fetch('/api/settings').then(r => r.json()).then(setSettings);
+    init();
   }, []);
 
   useEffect(() => {
@@ -2072,7 +2102,7 @@ export default function App() {
   };
 
   const handleDailyClaim = async () => {
-    if (!user) return;
+    if (!user) return false;
     try {
       const res = await fetch('/api/daily/claim', {
         method: 'POST',
@@ -2081,23 +2111,25 @@ export default function App() {
       });
       const data = await res.json();
       if (res.ok) {
-        // Update local state directly since backend already updated DB
         setUser(prev => prev ? { 
           ...prev, 
           coins: prev.coins + data.reward, 
           total_earned: prev.total_earned + data.reward 
         } : null);
         alert(`Success! You claimed ${data.reward} TLX. Streak: ${data.streak} days!`);
+        return true;
       } else {
         if (data.message === "Already claimed today") {
           alert("Reward already received! Come back tomorrow.");
         } else {
           alert(data.message || 'Failed to claim');
         }
+        return false;
       }
     } catch (err) {
       console.error('Daily claim error:', err);
       alert('Failed to connect to server');
+      return false;
     }
   };
 
@@ -2117,6 +2149,29 @@ export default function App() {
       document.head.appendChild(fragment);
     }
   }, [settings.head_custom_code]);
+
+  if (isInitialLoading) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4">
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="flex flex-col items-center gap-6"
+        >
+          <div className="w-20 h-20 gradient-bg rounded-[2rem] flex items-center justify-center shadow-2xl shadow-primary/40 animate-pulse">
+            <Zap className="text-white fill-white" size={40} />
+          </div>
+          <div className="text-center">
+            <h1 className="text-3xl font-display font-bold mb-2 tracking-tight">TeleX</h1>
+            <div className="flex items-center gap-2 text-white/40 font-mono text-sm">
+              <RefreshCw size={14} className="animate-spin" />
+              <span>Loading your profile...</span>
+            </div>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background selection:bg-primary/30">
