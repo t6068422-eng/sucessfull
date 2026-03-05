@@ -1,5 +1,4 @@
 import express from "express";
-import Database from "better-sqlite3";
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -8,139 +7,183 @@ const __dirname = path.dirname(__filename);
 
 const dbPath = process.env.VERCEL === '1' ? '/tmp/telex.db' : 'telex.db';
 let db: any;
+let Database: any;
 
-try {
-  db = new Database(dbPath);
-  if (process.env.VERCEL !== '1') {
-    db.pragma('journal_mode = WAL');
-  }
-  
-  // Initialize Database
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS settings (
-      key TEXT PRIMARY KEY,
-      value TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS users (
-      id TEXT PRIMARY KEY,
-      username TEXT,
-      ip_address TEXT,
-      coins INTEGER DEFAULT 0,
-      total_earned INTEGER DEFAULT 0,
-      join_date DATETIME DEFAULT CURRENT_TIMESTAMP,
-      last_active DATETIME DEFAULT CURRENT_TIMESTAMP,
-      is_blocked INTEGER DEFAULT 0,
-      block_reason TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS tasks (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      title TEXT,
-      reward INTEGER,
-      time_estimate TEXT,
-      category TEXT,
-      icon TEXT,
-      link TEXT,
-      active INTEGER DEFAULT 1
-    );
-
-    CREATE TABLE IF NOT EXISTS coupons (
-      code TEXT PRIMARY KEY,
-      reward INTEGER,
-      usage_limit INTEGER,
-      used_count INTEGER DEFAULT 0,
-      expiry_date DATETIME,
-      active INTEGER DEFAULT 1
-    );
-
-    CREATE TABLE IF NOT EXISTS ads (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      placement TEXT,
-      code TEXT,
-      active INTEGER DEFAULT 1
-    );
-
-    CREATE TABLE IF NOT EXISTS withdrawals (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id TEXT,
-      amount INTEGER,
-      method TEXT,
-      address TEXT,
-      status TEXT DEFAULT 'pending',
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS daily_claims (
-      user_id TEXT,
-      claim_date DATE,
-      streak INTEGER,
-      PRIMARY KEY (user_id, claim_date)
-    );
-    CREATE TABLE IF NOT EXISTS user_tasks (
-      user_id TEXT,
-      task_id INTEGER,
-      completed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (user_id, task_id)
-    );
-
-    CREATE TABLE IF NOT EXISTS game_plays (
-      user_id TEXT,
-      game_id TEXT,
-      play_date DATE,
-      play_count INTEGER DEFAULT 0,
-      PRIMARY KEY (user_id, game_id, play_date)
-    );
-
-    CREATE TABLE IF NOT EXISTS user_coupons (
-      user_id TEXT,
-      coupon_code TEXT,
-      redeemed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (user_id, coupon_code)
-    );
-  `);
-
-  // Migration: Add link and expires_at columns to tasks if missing
+async function ensureDb() {
+  if (db) return db;
   try {
-    db.prepare("ALTER TABLE tasks ADD COLUMN link TEXT").run();
-  } catch (e) {}
-  try {
-    db.prepare("ALTER TABLE tasks ADD COLUMN expires_at DATETIME").run();
-  } catch (e) {}
+    if (!Database) {
+      const mod = await import("better-sqlite3");
+      Database = mod.default;
+    }
+    db = new Database(dbPath);
+    if (process.env.VERCEL !== '1') {
+      db.pragma('journal_mode = WAL');
+    }
+    
+    // Initialize Database
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT
+      );
 
-  // Seed initial settings if not exists
-  const seedSettings = db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)");
-  seedSettings.run("withdrawals_enabled", "true");
-  seedSettings.run("min_withdrawal", "1000");
+      CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        username TEXT,
+        ip_address TEXT,
+        coins INTEGER DEFAULT 0,
+        total_earned INTEGER DEFAULT 0,
+        join_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+        last_active DATETIME DEFAULT CURRENT_TIMESTAMP,
+        is_blocked INTEGER DEFAULT 0,
+        block_reason TEXT
+      );
 
-  // Seed initial tasks
-  const taskCount = db.prepare("SELECT COUNT(*) as count FROM tasks").get() as any;
-  if (taskCount.count === 0) {
-    const insertTask = db.prepare("INSERT INTO tasks (title, reward, time_estimate, category, icon, link) VALUES (?, ?, ?, ?, ?, ?)");
-    insertTask.run("Complete Survey", 50, "5 min", "Survey", "ClipboardList", "https://google.com");
-    insertTask.run("Watch Video Ad", 10, "30 sec", "Video", "Zap", "https://youtube.com");
-    insertTask.run("Download App", 200, "10 min", "App", "Star", "https://play.google.com");
-    insertTask.run("Follow on Twitter", 20, "1 min", "Social", "TrendingUp", "https://twitter.com");
-    insertTask.run("Test New Feature", 100, "15 min", "Testing", "CheckCircle2", "https://github.com");
+      CREATE TABLE IF NOT EXISTS tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT,
+        reward INTEGER,
+        time_estimate TEXT,
+        category TEXT,
+        icon TEXT,
+        link TEXT,
+        active INTEGER DEFAULT 1
+      );
+
+      CREATE TABLE IF NOT EXISTS coupons (
+        code TEXT PRIMARY KEY,
+        reward INTEGER,
+        usage_limit INTEGER,
+        used_count INTEGER DEFAULT 0,
+        expiry_date DATETIME,
+        active INTEGER DEFAULT 1
+      );
+
+      CREATE TABLE IF NOT EXISTS ads (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        placement TEXT,
+        code TEXT,
+        active INTEGER DEFAULT 1
+      );
+
+      CREATE TABLE IF NOT EXISTS withdrawals (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT,
+        amount INTEGER,
+        method TEXT,
+        address TEXT,
+        status TEXT DEFAULT 'pending',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS daily_claims (
+        user_id TEXT,
+        claim_date DATE,
+        streak INTEGER,
+        PRIMARY KEY (user_id, claim_date)
+      );
+      CREATE TABLE IF NOT EXISTS user_tasks (
+        user_id TEXT,
+        task_id INTEGER,
+        completed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (user_id, task_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS game_plays (
+        user_id TEXT,
+        game_id TEXT,
+        play_date DATE,
+        play_count INTEGER DEFAULT 0,
+        PRIMARY KEY (user_id, game_id, play_date)
+      );
+
+      CREATE TABLE IF NOT EXISTS user_coupons (
+        user_id TEXT,
+        coupon_code TEXT,
+        redeemed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (user_id, coupon_code)
+      );
+    `);
+
+    // Migration: Add link and expires_at columns to tasks if missing
+    try {
+      db.prepare("ALTER TABLE tasks ADD COLUMN link TEXT").run();
+    } catch (e) {}
+    try {
+      db.prepare("ALTER TABLE tasks ADD COLUMN expires_at DATETIME").run();
+    } catch (e) {}
+
+    // Seed initial settings if not exists
+    const seedSettings = db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)");
+    seedSettings.run("withdrawals_enabled", "true");
+    seedSettings.run("min_withdrawal", "1000");
+
+    // Seed initial tasks
+    const taskCount = db.prepare("SELECT COUNT(*) as count FROM tasks").get() as any;
+    if (taskCount.count === 0) {
+      const insertTask = db.prepare("INSERT INTO tasks (title, reward, time_estimate, category, icon, link) VALUES (?, ?, ?, ?, ?, ?)");
+      insertTask.run("Complete Survey", 50, "5 min", "Survey", "ClipboardList", "https://google.com");
+      insertTask.run("Watch Video Ad", 10, "30 sec", "Video", "Zap", "https://youtube.com");
+      insertTask.run("Download App", 200, "10 min", "App", "Star", "https://play.google.com");
+      insertTask.run("Follow on Twitter", 20, "1 min", "Social", "TrendingUp", "https://twitter.com");
+      insertTask.run("Test New Feature", 100, "15 min", "Testing", "CheckCircle2", "https://github.com");
+    }
+
+    // Seed initial coupons
+    const couponCount = db.prepare("SELECT COUNT(*) as count FROM coupons").get() as any;
+    if (couponCount.count === 0) {
+      const insertCoupon = db.prepare("INSERT INTO coupons (code, reward, usage_limit, expiry_date) VALUES (?, ?, ?, ?)");
+      insertCoupon.run("WELCOME100", 100, 1000, "2026-12-31");
+      insertCoupon.run("TELEX2026", 50, 5000, "2026-12-31");
+    }
+  } catch (err) {
+    console.error("Database initialization error:", err);
+    throw err;
   }
-
-  // Seed initial coupons
-  const couponCount = db.prepare("SELECT COUNT(*) as count FROM coupons").get() as any;
-  if (couponCount.count === 0) {
-    const insertCoupon = db.prepare("INSERT INTO coupons (code, reward, usage_limit, expiry_date) VALUES (?, ?, ?, ?)");
-    insertCoupon.run("WELCOME100", 100, 1000, "2026-12-31");
-    insertCoupon.run("TELEX2026", 50, 5000, "2026-12-31");
-  }
-} catch (err) {
-  console.error("Database initialization error:", err);
+  return db;
 }
 
 const app = express();
 app.use(express.json());
 
+// Database Middleware
+app.use(async (req, res, next) => {
+  if (req.path.startsWith("/api") && req.path !== "/api/health" && req.path !== "/api/debug" && req.path !== "/api/test") {
+    try {
+      await ensureDb();
+    } catch (err: any) {
+      return res.status(500).json({ error: "Database initialization failed", message: err.message });
+    }
+  }
+  next();
+});
+
 // Health Check
 app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", database: !!db });
+  res.json({ 
+    status: "ok", 
+    database: !!db,
+    env: process.env.NODE_ENV,
+    vercel: process.env.VERCEL,
+    cwd: process.cwd()
+  });
+});
+
+app.get("/api/debug", (req, res) => {
+  res.json({
+    headers: req.headers,
+    url: req.url,
+    method: req.method,
+    env: {
+      NODE_ENV: process.env.NODE_ENV,
+      VERCEL: process.env.VERCEL
+    }
+  });
+});
+
+app.get("/api/test", (req, res) => {
+  res.send("API is working!");
 });
 
 // API Routes

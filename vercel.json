@@ -1,7 +1,5 @@
 {
   "version": 2,
-  "framework": "vite",
-  "cleanUrls": true,
   "rewrites": [
     {
       "source": "/api/(.*)",
@@ -11,10 +9,5 @@
       "source": "/(.*)",
       "destination": "/index.html"
     }
-  ],
-  "functions": {
-    "api/index.ts": {
-      "includeFiles": "telex.db"
-    }
-  }
+  ]
 }

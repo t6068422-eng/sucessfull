@@ -2193,10 +2193,24 @@ export default function App() {
                 <span>{isInitialLoading ? 'Loading your profile...' : 'Failed to load profile'}</span>
               </div>
               {initError && (
-                <div className="max-w-xs text-center">
-                  <p className="text-red-400/80 text-xs font-mono break-all bg-red-500/10 p-2 rounded-lg border border-red-500/20">
-                    {initError}
-                  </p>
+                <div className="max-w-xs w-full mt-4">
+                  <div className="bg-red-500/20 border border-red-500/50 rounded-2xl p-4 backdrop-blur-xl">
+                    <div className="flex items-center gap-3 mb-2 text-red-400">
+                      <Zap size={18} />
+                      <span className="font-bold text-sm uppercase tracking-wider">System Error</span>
+                    </div>
+                    <p className="text-white/80 text-xs font-mono break-all leading-relaxed">
+                      {initError}
+                    </p>
+                    <div className="mt-4 pt-4 border-t border-white/10 flex flex-col gap-2">
+                      <p className="text-[10px] text-white/40 uppercase tracking-widest">Troubleshooting</p>
+                      <ul className="text-[10px] text-white/60 list-disc list-inside space-y-1">
+                        <li>Check Vercel Environment Variables</li>
+                        <li>Verify GEMINI_API_KEY is set</li>
+                        <li>Ensure Database is initialized</li>
+                      </ul>
+                    </div>
+                  </div>
                 </div>
               )}
               {!isInitialLoading && !user && (
