@@ -2016,7 +2016,7 @@ export default function App() {
       localStorage.setItem('telex_user_id', userId);
     }
 
-    const init = async () => {
+    const init = async (retries = 3) => {
       try {
         const [userRes, settingsRes] = await Promise.all([
           fetch('/api/user/sync', {
@@ -2028,7 +2028,7 @@ export default function App() {
         ]);
 
         if (!userRes.ok || !settingsRes.ok) {
-          throw new Error('Failed to load initial data');
+          throw new Error(`Server error: ${userRes.status} / ${settingsRes.status}`);
         }
 
         const userData = await userRes.json();
@@ -2042,14 +2042,24 @@ export default function App() {
         }
       } catch (err) {
         console.error('Init error:', err);
-        // Don't set loading to false yet, or show an error state
-        alert('Connection error. Please check your internet and try again.');
+        if (retries > 0) {
+          console.log(`Retrying... (${retries} left)`);
+          setTimeout(() => init(retries - 1), 2000);
+        } else {
+          alert('Connection error. Please check your internet and try again. If the issue persists, please refresh the page.');
+        }
       } finally {
-        setIsInitialLoading(false);
+        if (retries === 0) setIsInitialLoading(false);
+        // We only set loading to false if we succeeded or ran out of retries
       }
     };
 
-    init();
+    const startInit = async () => {
+      await init();
+      setIsInitialLoading(false);
+    };
+
+    startInit();
   }, []);
 
   useEffect(() => {
