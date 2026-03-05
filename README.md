@@ -19,6 +19,20 @@ This application is optimized for deployment on **Vercel**.
     *   **Note**: Vercel's filesystem is ephemeral. Data will be reset on every redeploy or function restart.
     *   **Recommendation**: For production data persistence, connect to a cloud database like **Supabase**, **Neon**, or **Vercel Postgres**.
 
+## ❓ Troubleshooting Deployment
+
+### "npm warn deprecated" messages
+These are **warnings**, not errors. They are common in modern web development and **will not** prevent your site from deploying. You can safely ignore them.
+
+### "Detected engines: { node: 20.x }" warning
+This is a standard Vercel notification. I have pinned the version to `20.x` to ensure stability. It is not an error.
+
+### Build Fails?
+If the build actually fails (red text at the bottom), check:
+1.  **Environment Variables**: Did you add `GEMINI_API_KEY` in Vercel?
+2.  **Framework Preset**: Is it set to **Vite** in Vercel settings?
+3.  **Logs**: Look for the first line that starts with `Error:` above the final failure message.
+
 ## 📦 Scripts
 
 *   `npm run dev`: Start development server (Express + Vite).
