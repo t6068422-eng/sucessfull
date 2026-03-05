@@ -1,20 +1,26 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# TeleX (TLX) - Vercel Deployment Guide
 
-# Run and deploy your AI Studio app
+This application is optimized for deployment on **Vercel**.
 
-This contains everything you need to run your app locally.
+## 🚀 Deployment Steps
 
-View your app in AI Studio: https://ai.studio/apps/285ca1c8-9728-4900-80ae-081f006067c6
+1.  **Push to GitHub**: Push your code to a GitHub repository.
+2.  **Import to Vercel**: Go to [Vercel](https://vercel.com) and import your repository.
+3.  **Configure Environment Variables**:
+    *   Add `GEMINI_API_KEY` (if using Gemini features).
+    *   Add any other custom variables you've defined.
+4.  **Deploy**: Vercel will automatically detect the configuration and deploy the app.
 
-## Run Locally
+## 🛠️ Vercel-Friendly Features Included:
 
-**Prerequisites:**  Node.js
+*   **Serverless API**: The backend is located in `api/index.ts` and is automatically handled by Vercel as a serverless function.
+*   **SPA Routing**: `vercel.json` is configured to handle client-side routing, so refreshing the page on `/tasks` or `/games` won't result in a 404.
+*   **SQLite Persistence**: The app uses `/tmp/telex.db` when running on Vercel. 
+    *   **Note**: Vercel's filesystem is ephemeral. Data will be reset on every redeploy or function restart.
+    *   **Recommendation**: For production data persistence, connect to a cloud database like **Supabase**, **Neon**, or **Vercel Postgres**.
 
+## 📦 Scripts
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+*   `npm run dev`: Start development server (Express + Vite).
+*   `npm run build`: Build the frontend for production.
+*   `npm start`: Start the production server (for local testing).
