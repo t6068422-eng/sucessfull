@@ -2009,6 +2009,8 @@ export default function App() {
     }
   };
 
+  const [initError, setInitError] = useState<string | null>(null);
+
   useEffect(() => {
     let userId = localStorage.getItem('telex_user_id');
     if (!userId) {
@@ -2028,7 +2030,9 @@ export default function App() {
         ]);
 
         if (!userRes.ok || !settingsRes.ok) {
-          throw new Error(`Server error: ${userRes.status} / ${settingsRes.status}`);
+          const userErr = !userRes.ok ? await userRes.text().catch(() => 'Unknown error') : '';
+          const settingsErr = !settingsRes.ok ? await settingsRes.text().catch(() => 'Unknown error') : '';
+          throw new Error(`Server error: User(${userRes.status}: ${userErr}) Settings(${settingsRes.status}: ${settingsErr})`);
         }
 
         const userData = await userRes.json();
@@ -2037,20 +2041,20 @@ export default function App() {
         if (userData && userData.id) {
           setUser(userData);
           setSettings(settingsData);
+          setInitError(null);
         } else {
           throw new Error('Invalid user data received');
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error('Init error:', err);
         if (retries > 0) {
           console.log(`Retrying... (${retries} left)`);
           setTimeout(() => init(retries - 1), 2000);
         } else {
-          alert('Connection error. Please check your internet and try again. If the issue persists, please refresh the page.');
+          setInitError(err.message || String(err));
         }
       } finally {
         if (retries === 0) setIsInitialLoading(false);
-        // We only set loading to false if we succeeded or ran out of retries
       }
     };
 
@@ -2188,6 +2192,13 @@ export default function App() {
                 <RefreshCw size={14} className="animate-spin" />
                 <span>{isInitialLoading ? 'Loading your profile...' : 'Failed to load profile'}</span>
               </div>
+              {initError && (
+                <div className="max-w-xs text-center">
+                  <p className="text-red-400/80 text-xs font-mono break-all bg-red-500/10 p-2 rounded-lg border border-red-500/20">
+                    {initError}
+                  </p>
+                </div>
+              )}
               {!isInitialLoading && !user && (
                 <button 
                   onClick={() => window.location.reload()}

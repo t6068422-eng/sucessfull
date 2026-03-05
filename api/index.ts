@@ -11,7 +11,9 @@ let db: any;
 
 try {
   db = new Database(dbPath);
-  db.pragma('journal_mode = WAL');
+  if (process.env.VERCEL !== '1') {
+    db.pragma('journal_mode = WAL');
+  }
   
   // Initialize Database
   db.exec(`
@@ -151,6 +153,7 @@ app.use("/api/admin", (req, res, next) => {
 
 app.get("/api/settings", (req, res) => {
   try {
+    if (!db) throw new Error("Database not initialized");
     const settings = db.prepare("SELECT * FROM settings").all();
     const settingsObj = settings.reduce((acc: any, curr: any) => {
       acc[curr.key] = curr.value;
@@ -174,6 +177,7 @@ app.post("/api/admin/login", (req, res) => {
 // User management
 app.post("/api/user/sync", (req, res) => {
   try {
+    if (!db) throw new Error("Database not initialized");
     const { userId, username, ip } = req.body;
     const user = db.prepare("SELECT * FROM users WHERE id = ?").get(userId) as any;
     if (!user) {
@@ -190,6 +194,7 @@ app.post("/api/user/sync", (req, res) => {
 
 app.post("/api/user/add-coins", (req, res) => {
   try {
+    if (!db) throw new Error("Database not initialized");
     const { userId, amount, reason } = req.body;
     const user = db.prepare("SELECT coins FROM users WHERE id = ?").get(userId) as any;
     if (!user) return res.status(404).json({ message: "User not found" });
@@ -218,6 +223,7 @@ app.post("/api/user/update", (req, res) => {
 // Tasks
 app.get("/api/tasks", (req, res) => {
   try {
+    if (!db) throw new Error("Database not initialized");
     const userId = req.query.userId;
     const now = new Date().toISOString();
     let tasks;
@@ -240,6 +246,7 @@ app.get("/api/tasks", (req, res) => {
 
 app.post("/api/tasks/complete", (req, res) => {
   try {
+    if (!db) throw new Error("Database not initialized");
     const { userId, taskId } = req.body;
     const existing = db.prepare("SELECT * FROM user_tasks WHERE user_id = ? AND task_id = ?").get(userId, taskId);
     if (existing) return res.status(400).json({ message: "Task already completed" });
@@ -258,6 +265,7 @@ app.post("/api/tasks/complete", (req, res) => {
 // Task Admin
 app.get("/api/admin/tasks", (req, res) => {
   try {
+    if (!db) throw new Error("Database not initialized");
     const tasks = db.prepare("SELECT * FROM tasks").all();
     res.json(tasks);
   } catch (err) {
@@ -550,6 +558,15 @@ app.post("/api/admin/settings", (req, res) => {
   } catch (err) {
     res.status(500).json({ error: "Database error" });
   }
+});
+
+// Global Error Handler
+app.use((err: any, req: any, res: any, next: any) => {
+  console.error("Unhandled error:", err);
+  res.status(500).json({ 
+    error: "Internal Server Error", 
+    message: process.env.NODE_ENV === 'development' ? err.message : undefined 
+  });
 });
 
 // Vite / Static logic
