@@ -262,16 +262,35 @@ app.post("/api/user/sync", (req, res) => {
   try {
     if (!db) throw new Error("Database not initialized");
     const { userId, username, ip } = req.body;
-    const user = db.prepare("SELECT * FROM users WHERE id = ?").get(userId) as any;
-    if (!user) {
-      db.prepare("INSERT INTO users (id, username, ip_address) VALUES (?, ?, ?)").run(userId, username || `User_${userId.slice(0, 4)}`, ip || "127.0.0.1");
-      const newUser = db.prepare("SELECT * FROM users WHERE id = ?").get(userId);
-      return res.json(newUser);
+    
+    if (!userId || typeof userId !== 'string' || userId.trim() === '' || userId === 'undefined' || userId === 'null') {
+      return res.status(400).json({ error: "Invalid User ID provided" });
     }
-    db.prepare("UPDATE users SET last_active = CURRENT_TIMESTAMP WHERE id = ?").run(userId);
+
+    console.log(`[USER] Syncing user: ${userId}`);
+    
+    let user = db.prepare("SELECT * FROM users WHERE id = ?").get(userId) as any;
+    
+    if (!user) {
+      console.log(`[USER] Creating new user: ${userId}`);
+      db.prepare("INSERT INTO users (id, username, ip_address) VALUES (?, ?, ?)").run(
+        userId, 
+        username || `User_${userId.slice(0, 4)}`, 
+        ip || req.ip || "127.0.0.1"
+      );
+      user = db.prepare("SELECT * FROM users WHERE id = ?").get(userId);
+    } else {
+      db.prepare("UPDATE users SET last_active = CURRENT_TIMESTAMP WHERE id = ?").run(userId);
+    }
+    
+    if (!user) {
+      throw new Error("Failed to retrieve user after sync/create");
+    }
+    
     res.json(user);
-  } catch (err) {
-    res.status(500).json({ error: "Database error" });
+  } catch (err: any) {
+    console.error("[USER] Sync error:", err);
+    res.status(500).json({ error: "Database error during sync", message: err.message });
   }
 });
 

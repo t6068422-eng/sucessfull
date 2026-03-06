@@ -2031,8 +2031,8 @@ export default function App() {
     initStarted.current = true;
 
     let userId = localStorage.getItem('telex_user_id');
-    if (!userId) {
-      userId = Math.random().toString(36).substring(2, 15);
+    if (!userId || userId === 'undefined' || userId === 'null' || userId.trim() === '') {
+      userId = 'user_' + Math.random().toString(36).substring(2, 15);
       localStorage.setItem('telex_user_id', userId);
     }
 
@@ -2049,7 +2049,14 @@ export default function App() {
         ]);
 
         if (!userRes.ok || !settingsRes.ok) {
-          throw new Error(`API Error: User(${userRes.status}) Settings(${settingsRes.status})`);
+          let errorDetail = '';
+          try {
+            const errData = !userRes.ok ? await userRes.json() : await settingsRes.json();
+            errorDetail = errData.message || errData.error || 'Unknown API error';
+          } catch (e) {
+            errorDetail = `Status: User(${userRes.status}) Settings(${settingsRes.status})`;
+          }
+          throw new Error(errorDetail);
         }
 
         const userData = await userRes.json();
@@ -2061,6 +2068,8 @@ export default function App() {
           setSettings(settingsData);
           setInitError(null);
           setIsInitialLoading(false); 
+        } else if (userData && userData.error) {
+          throw new Error(userData.error);
         } else {
           throw new Error('Invalid data format from server');
         }
