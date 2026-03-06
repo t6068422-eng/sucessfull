@@ -1903,6 +1903,10 @@ const AdminPanel = ({ onClose, onTasksChange }: { onClose: () => void, onTasksCh
                   <label className="block text-xs font-bold uppercase text-white/40 mb-2">Coins</label>
                   <input type="number" value={editingUser.coins || 0} onChange={e => setEditingUser({...editingUser, coins: parseInt(e.target.value) || 0})} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2" />
                 </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase text-white/40 mb-2">Total Earned</label>
+                  <input type="number" value={editingUser.total_earned || 0} onChange={e => setEditingUser({...editingUser, total_earned: parseInt(e.target.value) || 0})} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2" />
+                </div>
                 <div className="flex items-center justify-between">
                   <span className="font-bold">Blocked</span>
                   <button 
@@ -2354,6 +2358,7 @@ export default function App() {
           const userId = localStorage.getItem('telex_user_id');
           if (userId) {
             fetch(`/api/tasks?userId=${userId}`).then(r => r.json()).then(setTasks);
+            fetch('/api/settings').then(r => r.json()).then(setSettings);
             fetch('/api/user/sync', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
