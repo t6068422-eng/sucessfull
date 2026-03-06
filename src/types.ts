@@ -1,4 +1,4 @@
-export interface User {
+export type User = {
   id: string;
   username: string;
   coins: number;
@@ -7,9 +7,9 @@ export interface User {
   last_active: string;
   is_blocked: boolean;
   block_reason?: string;
-}
+};
 
-export interface Task {
+export type Task = {
   id: number;
   title: string;
   reward: number;
@@ -18,18 +18,18 @@ export interface Task {
   icon: string;
   active: number;
   link: string;
-}
+};
 
-export interface Coupon {
+export type Coupon = {
   code: string;
   reward: number;
   usage_limit: number;
   used_count: number;
   expiry_date: string;
   active: boolean;
-}
+};
 
-export interface Withdrawal {
+export type Withdrawal = {
   id: number;
   user_id: string;
   username?: string;
@@ -38,9 +38,9 @@ export interface Withdrawal {
   address: string;
   status: 'pending' | 'processing' | 'completed' | 'rejected';
   created_at: string;
-}
+};
 
-export interface AppSettings {
+export type AppSettings = {
   withdrawals_enabled: string;
   min_withdrawal: string;
-}
+};
