@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Home, 
@@ -34,6 +34,12 @@ const AdComponent = ({ placement }: { placement: string }) => {
   const containerRef = React.useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('disable_ads') === 'true') {
+      console.log(`Ads disabled for ${placement} via query parameter.`);
+      return;
+    }
+
     fetch('/api/ads')
       .then(r => r.json())
       .then(ads => {
@@ -43,8 +49,12 @@ const AdComponent = ({ placement }: { placement: string }) => {
       });
   }, [placement]);
 
+  const lastInjectedCode = useRef<string | null>(null);
+
   useEffect(() => {
-    if (adCode && containerRef.current) {
+    if (adCode && containerRef.current && adCode !== lastInjectedCode.current) {
+      console.log(`Injecting ad for ${placement}...`);
+      lastInjectedCode.current = adCode;
       // Clear existing content
       containerRef.current.innerHTML = '';
       
@@ -2010,8 +2020,12 @@ export default function App() {
   };
 
   const [initError, setInitError] = useState<string | null>(null);
+  const initStarted = useRef(false);
 
   useEffect(() => {
+    if (initStarted.current) return;
+    initStarted.current = true;
+
     let userId = localStorage.getItem('telex_user_id');
     if (!userId) {
       userId = Math.random().toString(36).substring(2, 15);
@@ -2153,7 +2167,14 @@ export default function App() {
   };
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('disable_head_code') === 'true') {
+      console.log('Custom head code injection disabled via query parameter.');
+      return;
+    }
+
     if (settings.head_custom_code) {
+      console.log('Injecting custom head code...');
       // Remove any previously injected custom head code to avoid duplicates
       const existing = document.querySelectorAll('[data-custom-head]');
       existing.forEach(el => el.remove());
@@ -2167,6 +2188,10 @@ export default function App() {
       
       document.head.appendChild(fragment);
     }
+
+    return () => {
+      document.querySelectorAll('[data-custom-head]').forEach(el => el.remove());
+    };
   }, [settings.head_custom_code]);
 
   if (isInitialLoading || !user) {
