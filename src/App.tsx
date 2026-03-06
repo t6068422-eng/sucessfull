@@ -2170,6 +2170,8 @@ export default function App() {
     }
   };
 
+  const lastInjectedHeadCode = useRef<string | null>(null);
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('disable_head_code') === 'true') {
@@ -2177,25 +2179,27 @@ export default function App() {
       return;
     }
 
-    if (settings.head_custom_code) {
+    if (settings.head_custom_code && settings.head_custom_code !== lastInjectedHeadCode.current) {
       console.log('Injecting custom head code...');
+      lastInjectedHeadCode.current = settings.head_custom_code;
+      
       // Remove any previously injected custom head code to avoid duplicates
       const existing = document.querySelectorAll('[data-custom-head]');
       existing.forEach(el => el.remove());
 
       // Parse and inject new code
-      const range = document.createRange();
-      const fragment = range.createContextualFragment(settings.head_custom_code);
-      
-      // Mark elements so we can find them later
-      fragment.querySelectorAll('*').forEach(el => el.setAttribute('data-custom-head', 'true'));
-      
-      document.head.appendChild(fragment);
+      try {
+        const range = document.createRange();
+        const fragment = range.createContextualFragment(settings.head_custom_code);
+        
+        // Mark elements so we can find them later
+        fragment.querySelectorAll('*').forEach(el => el.setAttribute('data-custom-head', 'true'));
+        
+        document.head.appendChild(fragment);
+      } catch (err) {
+        console.error('Error injecting head code:', err);
+      }
     }
-
-    return () => {
-      document.querySelectorAll('[data-custom-head]').forEach(el => el.remove());
-    };
   }, [settings.head_custom_code]);
 
   if (isInitialLoading || !user) {
