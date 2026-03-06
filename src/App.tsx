@@ -2031,8 +2031,6 @@ export default function App() {
         ]);
 
         if (!userRes.ok || !settingsRes.ok) {
-          const userErr = !userRes.ok ? await userRes.text().catch(() => 'Unknown error') : '';
-          const settingsErr = !settingsRes.ok ? await settingsRes.text().catch(() => 'Unknown error') : '';
           throw new Error(`API Error: User(${userRes.status}) Settings(${settingsRes.status})`);
         }
 
@@ -2044,7 +2042,7 @@ export default function App() {
           setUser(userData);
           setSettings(settingsData);
           setInitError(null);
-          setIsInitialLoading(false); // Success!
+          setIsInitialLoading(false); 
         } else {
           throw new Error('Invalid data format from server');
         }
@@ -2055,17 +2053,12 @@ export default function App() {
           setTimeout(() => init(retries - 1), 2000);
         } else {
           setInitError(err.message || String(err));
-          setIsInitialLoading(false); // Done retrying, show error
+          setIsInitialLoading(false);
         }
       }
     };
 
-    const startInit = async () => {
-      await init();
-      setIsInitialLoading(false);
-    };
-
-    startInit();
+    init();
   }, []);
 
   useEffect(() => {
