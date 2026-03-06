@@ -6,8 +6,14 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const startTime = Date.now();
-// Prefer root directory for persistence in AI Studio environment
-const dbPath = path.join(__dirname, '..', 'telex.db');
+// Robust path detection for different environments
+const getDbPath = () => {
+  if (process.env.VERCEL === '1' || process.env.K_SERVICE) {
+    return '/tmp/telex.db';
+  }
+  return path.join(process.cwd(), 'telex.db');
+};
+const dbPath = getDbPath();
 let db: any;
 let Database: any;
 let dbPromise: Promise<any> | null = null;
@@ -23,8 +29,22 @@ async function ensureDb() {
         Database = mod.default;
       }
       
-      console.log(`Connecting to database at ${dbPath}...`);
-      db = new Database(dbPath);
+      console.log(`Attempting to connect to database at: ${dbPath}`);
+      try {
+        db = new Database(dbPath, { timeout: 10000 });
+        // Enable WAL mode for better concurrency and to help with "database is locked" errors
+        db.pragma('journal_mode = WAL');
+      } catch (openErr: any) {
+        console.error(`Failed to open database at ${dbPath}:`, openErr);
+        // Fallback to /tmp if local path fails
+        if (dbPath !== '/tmp/telex.db') {
+          console.log("Falling back to /tmp/telex.db...");
+          db = new Database('/tmp/telex.db', { timeout: 10000 });
+          db.pragma('journal_mode = WAL');
+        } else {
+          throw openErr;
+        }
+      }
       
       // Initialize Database structure
       db.exec(`
