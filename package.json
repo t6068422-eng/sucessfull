@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "tsx api/index.ts",
-    "start": "node api/index.ts",
+    "start": "tsx api/index.ts",
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",

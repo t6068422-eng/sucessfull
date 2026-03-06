@@ -2019,6 +2019,7 @@ export default function App() {
     }
 
     const init = async (retries = 3) => {
+      console.log(`Initializing TeleX... Attempt ${4 - retries}`);
       try {
         const [userRes, settingsRes] = await Promise.all([
           fetch('/api/user/sync', {
@@ -2032,29 +2033,30 @@ export default function App() {
         if (!userRes.ok || !settingsRes.ok) {
           const userErr = !userRes.ok ? await userRes.text().catch(() => 'Unknown error') : '';
           const settingsErr = !settingsRes.ok ? await settingsRes.text().catch(() => 'Unknown error') : '';
-          throw new Error(`Server error: User(${userRes.status}: ${userErr}) Settings(${settingsRes.status}: ${settingsErr})`);
+          throw new Error(`API Error: User(${userRes.status}) Settings(${settingsRes.status})`);
         }
 
         const userData = await userRes.json();
         const settingsData = await settingsRes.json();
 
         if (userData && userData.id) {
+          console.log('Profile loaded successfully');
           setUser(userData);
           setSettings(settingsData);
           setInitError(null);
+          setIsInitialLoading(false); // Success!
         } else {
-          throw new Error('Invalid user data received');
+          throw new Error('Invalid data format from server');
         }
       } catch (err: any) {
         console.error('Init error:', err);
         if (retries > 0) {
-          console.log(`Retrying... (${retries} left)`);
+          console.log(`Retrying in 2s... (${retries} left)`);
           setTimeout(() => init(retries - 1), 2000);
         } else {
           setInitError(err.message || String(err));
+          setIsInitialLoading(false); // Done retrying, show error
         }
-      } finally {
-        if (retries === 0) setIsInitialLoading(false);
       }
     };
 
