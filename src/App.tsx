@@ -40,13 +40,17 @@ const AdComponent = ({ placement }: { placement: string }) => {
       return;
     }
 
-    fetch('/api/ads')
-      .then(r => r.json())
-      .then(ads => {
-        if (ads[placement]) {
-          setAdCode(ads[placement]);
+    fetch(`/api/ads/${placement}`)
+      .then(r => {
+        if (!r.ok) throw new Error('Ad fetch failed');
+        return r.json();
+      })
+      .then(data => {
+        if (data && data.code) {
+          setAdCode(data.code);
         }
-      });
+      })
+      .catch(err => console.error(`Ad fetch error for ${placement}:`, err));
   }, [placement]);
 
   const lastInjectedCode = useRef<string | null>(null);
@@ -68,6 +72,13 @@ const AdComponent = ({ placement }: { placement: string }) => {
       // Manually execute scripts if they weren't executed
       const scripts = containerRef.current.querySelectorAll('script');
       scripts.forEach(oldScript => {
+        if (oldScript.innerHTML.includes('location.reload') || 
+            oldScript.innerHTML.includes('location.href') ||
+            oldScript.innerHTML.includes('location.replace') ||
+            oldScript.innerHTML.includes('window.location')) {
+          console.warn('Blocked potentially malicious ad script');
+          return;
+        }
         const newScript = document.createElement('script');
         Array.from(oldScript.attributes).forEach((attr: any) => newScript.setAttribute(attr.name, attr.value));
         newScript.appendChild(document.createTextNode(oldScript.innerHTML));
@@ -2039,14 +2050,20 @@ export default function App() {
     const init = async (retries = 3) => {
       console.log(`Initializing TeleX... Attempt ${4 - retries}`);
       try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
+
         const [userRes, settingsRes] = await Promise.all([
           fetch('/api/user/sync', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId })
+            body: JSON.stringify({ userId }),
+            signal: controller.signal
           }),
-          fetch('/api/settings')
+          fetch('/api/settings', { signal: controller.signal })
         ]);
+
+        clearTimeout(timeoutId);
 
         if (!userRes.ok || !settingsRes.ok) {
           let errorDetail = '';
@@ -2054,7 +2071,7 @@ export default function App() {
             const errData = !userRes.ok ? await userRes.json() : await settingsRes.json();
             errorDetail = errData.message || errData.error || 'Unknown API error';
           } catch (e) {
-            errorDetail = `Status: User(${userRes.status}) Settings(${settingsRes.status})`;
+            errorDetail = `Server Error: User(${userRes.status}) Settings(${settingsRes.status})`;
           }
           throw new Error(errorDetail);
         }
@@ -2068,18 +2085,17 @@ export default function App() {
           setSettings(settingsData);
           setInitError(null);
           setIsInitialLoading(false); 
-        } else if (userData && userData.error) {
-          throw new Error(userData.error);
         } else {
-          throw new Error('Invalid data format from server');
+          throw new Error('Invalid data format received from server');
         }
       } catch (err: any) {
         console.error('Init error:', err);
         if (retries > 0) {
-          console.log(`Retrying in 2s... (${retries} left)`);
-          setTimeout(() => init(retries - 1), 2000);
+          const delay = 2000 + (3 - retries) * 1000; // Exponential backoff
+          console.log(`Retrying in ${delay/1000}s... (${retries} left)`);
+          setTimeout(() => init(retries - 1), delay);
         } else {
-          setInitError(err.message || String(err));
+          setInitError(err.name === 'AbortError' ? 'Connection timed out. The server might be busy.' : (err.message || String(err)));
           setIsInitialLoading(false);
         }
       }
@@ -2189,6 +2205,15 @@ export default function App() {
     }
 
     if (settings.head_custom_code && settings.head_custom_code !== lastInjectedHeadCode.current) {
+      // Sanitize head code to prevent refresh loops
+      if (settings.head_custom_code.includes('location.reload') || 
+          settings.head_custom_code.includes('location.href') ||
+          settings.head_custom_code.includes('location.replace') ||
+          settings.head_custom_code.includes('window.location')) {
+        console.warn('Blocked potentially malicious head code injection');
+        return;
+      }
+
       console.log('Injecting custom head code...');
       lastInjectedHeadCode.current = settings.head_custom_code;
       
@@ -2211,7 +2236,7 @@ export default function App() {
     }
   }, [settings.head_custom_code]);
 
-  if (isInitialLoading || !user) {
+  if (isInitialLoading) {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4">
         <motion.div 
@@ -2224,40 +2249,54 @@ export default function App() {
           </div>
           <div className="text-center">
             <h1 className="text-3xl font-display font-bold mb-2 tracking-tight">TeleX</h1>
+            <div className="flex items-center gap-2 text-white/40 font-mono text-sm">
+              <RefreshCw size={14} className="animate-spin" />
+              <span>Loading your profile...</span>
+            </div>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
+
+  if (initError || !user) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4">
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="flex flex-col items-center gap-6"
+        >
+          <div className="w-20 h-20 bg-red-500/20 rounded-[2rem] flex items-center justify-center shadow-2xl shadow-red-500/20">
+            <AlertCircle className="text-red-500" size={40} />
+          </div>
+          <div className="text-center">
+            <h1 className="text-3xl font-display font-bold mb-2 tracking-tight">TeleX</h1>
             <div className="flex flex-col items-center gap-4">
-              <div className="flex items-center gap-2 text-white/40 font-mono text-sm">
-                <RefreshCw size={14} className="animate-spin" />
-                <span>{isInitialLoading ? 'Loading your profile...' : 'Failed to load profile'}</span>
+              <div className="flex items-center gap-2 text-red-400 font-mono text-sm">
+                <span>{initError || 'Failed to establish secure connection'}</span>
               </div>
-              {initError && (
-                <div className="max-w-xs w-full mt-4">
-                  <div className="bg-red-500/20 border border-red-500/50 rounded-2xl p-4 backdrop-blur-xl">
-                    <div className="flex items-center gap-3 mb-2 text-red-400">
-                      <Zap size={18} />
-                      <span className="font-bold text-sm uppercase tracking-wider">System Error</span>
-                    </div>
-                    <p className="text-white/80 text-xs font-mono break-all leading-relaxed">
-                      {initError}
-                    </p>
-                    <div className="mt-4 pt-4 border-t border-white/10 flex flex-col gap-2">
-                      <p className="text-[10px] text-white/40 uppercase tracking-widest">Troubleshooting</p>
-                      <ul className="text-[10px] text-white/60 list-disc list-inside space-y-1">
-                        <li>Check Vercel Environment Variables</li>
-                        <li>Verify GEMINI_API_KEY is set</li>
-                        <li>Ensure Database is initialized</li>
-                      </ul>
-                    </div>
+              
+              <div className="max-w-xs w-full mt-4">
+                <div className="bg-white/5 border border-white/10 rounded-2xl p-4 backdrop-blur-xl">
+                  <div className="flex items-center gap-3 mb-2 text-white/40">
+                    <Zap size={18} />
+                    <span className="font-bold text-sm uppercase tracking-wider">Troubleshooting</span>
                   </div>
+                  <ul className="text-[10px] text-white/60 list-disc list-inside space-y-1 text-left">
+                    <li>Check your internet connection</li>
+                    <li>The server might be restarting</li>
+                    <li>Try clearing your browser cache</li>
+                  </ul>
                 </div>
-              )}
-              {!isInitialLoading && !user && (
-                <button 
-                  onClick={() => window.location.reload()}
-                  className="px-6 py-2 bg-white/10 hover:bg-white/20 rounded-xl text-sm font-bold transition-all"
-                >
-                  Retry Connection
-                </button>
-              )}
+              </div>
+
+              <button 
+                onClick={() => window.location.reload()}
+                className="px-8 py-3 gradient-bg rounded-xl text-sm font-bold transition-all shadow-lg shadow-primary/20"
+              >
+                Retry Connection
+              </button>
             </div>
           </div>
         </motion.div>
