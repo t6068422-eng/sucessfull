@@ -168,6 +168,16 @@ async function ensureDb() {
         insertCoupon.run("WELCOME100", 100, 1000, "2026-12-31");
         insertCoupon.run("TELEX2026", 50, 5000, "2026-12-31");
       }
+
+      // Seed initial ads if empty
+      const adCount = db.prepare("SELECT COUNT(*) as count FROM ads").get() as any;
+      if (adCount.count === 0) {
+        console.log("Seeding initial ads...");
+        const insertAd = db.prepare("INSERT INTO ads (placement, code, active) VALUES (?, ?, ?)");
+        insertAd.run("top", "<div style='padding:10px;background:#f0f0f0;text-align:center;border-radius:8px;'><strong>Top Ad Slot</strong><br/>Earn coins by viewing ads!</div>", 1);
+        insertAd.run("bottom", "<div style='padding:10px;background:#f0f0f0;text-align:center;border-radius:8px;'><strong>Bottom Ad Slot</strong><br/>Subscribe to Premium for no ads!</div>", 1);
+        insertAd.run("home_middle", "<div style='padding:20px;background:linear-gradient(45deg, #6366f1, #a855f7);color:white;text-align:center;border-radius:12px;margin:10px 0;'><strong>Special Offer!</strong><br/>Get 2x rewards on all tasks today!</div>", 1);
+      }
       
       console.log("Database ready.");
       return db;
@@ -243,6 +253,35 @@ app.get("/api/settings", (req, res) => {
       return acc;
     }, {});
     res.json(settingsObj);
+  } catch (err) {
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
+app.get("/api/ads/:placement", (req, res) => {
+  try {
+    if (!db) throw new Error("Database not initialized");
+    const { placement } = req.params;
+    const ad = db.prepare("SELECT code FROM ads WHERE placement = ? AND active = 1").get(placement) as any;
+    if (ad) {
+      res.json({ code: ad.code });
+    } else {
+      res.json({ code: null });
+    }
+  } catch (err) {
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
+app.get("/api/ads", (req, res) => {
+  try {
+    if (!db) throw new Error("Database not initialized");
+    const ads = db.prepare("SELECT placement, code FROM ads WHERE active = 1").all();
+    const adsMap = ads.reduce((acc: any, ad: any) => {
+      acc[ad.placement] = ad.code;
+      return acc;
+    }, {});
+    res.json(adsMap);
   } catch (err) {
     res.status(500).json({ error: "Database error" });
   }
@@ -616,19 +655,6 @@ app.delete("/api/admin/ads/:id", (req, res) => {
   try {
     db.prepare("DELETE FROM ads WHERE id = ?").run(req.params.id);
     res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: "Database error" });
-  }
-});
-
-app.get("/api/ads", (req, res) => {
-  try {
-    const ads = db.prepare("SELECT placement, code FROM ads WHERE active = 1").all();
-    const adsMap = ads.reduce((acc: any, ad: any) => {
-      acc[ad.placement] = ad.code;
-      return acc;
-    }, {});
-    res.json(adsMap);
   } catch (err) {
     res.status(500).json({ error: "Database error" });
   }

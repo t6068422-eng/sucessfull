@@ -57,6 +57,24 @@ const AdComponent = ({ placement }: { placement: string }) => {
 
   useEffect(() => {
     if (adCode && containerRef.current && adCode !== lastInjectedCode.current) {
+      // Sanitize ad code to prevent refresh loops
+      const forbidden = [
+        /location\s*=/i,
+        /location\.href/i,
+        /location\.replace/i,
+        /location\.reload/i,
+        /window\.location/i,
+        /top\.location/i,
+        /parent\.location/i,
+        /http-equiv=["']refresh["']/i
+      ];
+      
+      if (forbidden.some(pattern => pattern.test(adCode))) {
+        console.warn(`Blocked potentially malicious ad code for ${placement}`);
+        setAdCode(null);
+        return;
+      }
+
       console.log(`Injecting ad for ${placement}...`);
       lastInjectedCode.current = adCode;
       // Clear existing content
@@ -69,16 +87,9 @@ const AdComponent = ({ placement }: { placement: string }) => {
       // Append the fragment
       containerRef.current.appendChild(documentFragment);
 
-      // Manually execute scripts if they weren't executed
+      // Manually execute scripts
       const scripts = containerRef.current.querySelectorAll('script');
       scripts.forEach(oldScript => {
-        if (oldScript.innerHTML.includes('location.reload') || 
-            oldScript.innerHTML.includes('location.href') ||
-            oldScript.innerHTML.includes('location.replace') ||
-            oldScript.innerHTML.includes('window.location')) {
-          console.warn('Blocked potentially malicious ad script');
-          return;
-        }
         const newScript = document.createElement('script');
         Array.from(oldScript.attributes).forEach((attr: any) => newScript.setAttribute(attr.name, attr.value));
         newScript.appendChild(document.createTextNode(oldScript.innerHTML));
@@ -2206,10 +2217,18 @@ export default function App() {
 
     if (settings.head_custom_code && settings.head_custom_code !== lastInjectedHeadCode.current) {
       // Sanitize head code to prevent refresh loops
-      if (settings.head_custom_code.includes('location.reload') || 
-          settings.head_custom_code.includes('location.href') ||
-          settings.head_custom_code.includes('location.replace') ||
-          settings.head_custom_code.includes('window.location')) {
+      const forbidden = [
+        /location\s*=/i,
+        /location\.href/i,
+        /location\.replace/i,
+        /location\.reload/i,
+        /window\.location/i,
+        /top\.location/i,
+        /parent\.location/i,
+        /http-equiv=["']refresh["']/i
+      ];
+
+      if (forbidden.some(pattern => pattern.test(settings.head_custom_code))) {
         console.warn('Blocked potentially malicious head code injection');
         return;
       }
