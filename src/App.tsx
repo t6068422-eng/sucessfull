@@ -54,29 +54,41 @@ const AdComponent = ({ placement }: { placement: string }) => {
   }, [placement]);
 
   const lastInjectedCode = useRef<string | null>(null);
+  const lastBlockedCode = useRef<string | null>(null);
 
   useEffect(() => {
-    if (adCode && containerRef.current && adCode !== lastInjectedCode.current) {
+    if (adCode && containerRef.current && adCode !== lastInjectedCode.current && adCode !== lastBlockedCode.current) {
       // Sanitize ad code to prevent refresh loops
       const forbidden = [
         /location\s*=/i,
         /location\.href/i,
         /location\.replace/i,
         /location\.reload/i,
+        /location\.assign/i,
         /window\.location/i,
         /top\.location/i,
         /parent\.location/i,
-        /http-equiv=["']refresh["']/i
+        /history\.(go|back|forward)/i,
+        /window\.history/i,
+        /http-equiv=["']refresh["']/i,
+        /window\[["']location["']\]/i,
+        /location\[["']reload["']\]/i,
+        /location\[["']href["']\]/i,
+        /window\.history\.go/i,
+        /window\.history\.back/i,
+        /window\.history\.forward/i
       ];
       
       if (forbidden.some(pattern => pattern.test(adCode))) {
         console.warn(`Blocked potentially malicious ad code for ${placement}`);
+        lastBlockedCode.current = adCode;
         setAdCode(null);
         return;
       }
 
       console.log(`Injecting ad for ${placement}...`);
       lastInjectedCode.current = adCode;
+      lastBlockedCode.current = null;
       // Clear existing content
       containerRef.current.innerHTML = '';
       
@@ -2013,6 +2025,10 @@ const AdminPanel = ({ onClose, onTasksChange }: { onClose: () => void, onTasksCh
 // --- Main App ---
 
 export default function App() {
+  useEffect(() => {
+    console.log('App mounted at:', new Date().toISOString());
+  }, []);
+
   const [activeTab, setActiveTab] = useState('home');
   const [user, setUser] = useState<User | null>(null);
   const [settings, setSettings] = useState<AppSettings>({ withdrawals_enabled: 'true', min_withdrawal: '1000' });
@@ -2207,6 +2223,7 @@ export default function App() {
   };
 
   const lastInjectedHeadCode = useRef<string | null>(null);
+  const lastBlockedHeadCode = useRef<string | null>(null);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -2215,26 +2232,37 @@ export default function App() {
       return;
     }
 
-    if (settings.head_custom_code && settings.head_custom_code !== lastInjectedHeadCode.current) {
+    if (settings.head_custom_code && settings.head_custom_code !== lastInjectedHeadCode.current && settings.head_custom_code !== lastBlockedHeadCode.current) {
       // Sanitize head code to prevent refresh loops
       const forbidden = [
         /location\s*=/i,
         /location\.href/i,
         /location\.replace/i,
         /location\.reload/i,
+        /location\.assign/i,
         /window\.location/i,
         /top\.location/i,
         /parent\.location/i,
-        /http-equiv=["']refresh["']/i
+        /history\.(go|back|forward)/i,
+        /window\.history/i,
+        /http-equiv=["']refresh["']/i,
+        /window\[["']location["']\]/i,
+        /location\[["']reload["']\]/i,
+        /location\[["']href["']\]/i,
+        /window\.history\.go/i,
+        /window\.history\.back/i,
+        /window\.history\.forward/i
       ];
 
       if (forbidden.some(pattern => pattern.test(settings.head_custom_code))) {
         console.warn('Blocked potentially malicious head code injection');
+        lastBlockedHeadCode.current = settings.head_custom_code;
         return;
       }
 
       console.log('Injecting custom head code...');
       lastInjectedHeadCode.current = settings.head_custom_code;
+      lastBlockedHeadCode.current = null;
       
       // Remove any previously injected custom head code to avoid duplicates
       const existing = document.querySelectorAll('[data-custom-head]');
