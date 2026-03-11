@@ -2362,6 +2362,20 @@ export default function App() {
             )}
             {isLoggingIn ? 'Connecting...' : 'Sign in with Google'}
           </button>
+
+          <div className="mt-8 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl text-left">
+            <div className="flex items-center gap-2 text-red-400 mb-2">
+              <AlertCircle size={16} />
+              <span className="text-xs font-bold uppercase tracking-wider">Fix "Unauthorized Domain" Error</span>
+            </div>
+            <p className="text-[11px] text-white/60 mb-3 leading-relaxed">
+              If login fails, you must add this domain to your Firebase Console under <b>Authentication > Settings > Authorized Domains</b>:
+            </p>
+            <code className="block bg-black/40 p-2 rounded text-[10px] font-mono text-primary break-all select-all">
+              {window.location.hostname}
+            </code>
+          </div>
+
           <p className="mt-6 text-[10px] text-white/30 uppercase tracking-[0.2em]">
             Secure persistent storage powered by Firebase
           </p>
