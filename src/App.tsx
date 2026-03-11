@@ -23,9 +23,29 @@ import {
   Zap,
   Megaphone,
   Code,
-  Save
+  Save,
+  LogIn
 } from 'lucide-react';
 import { User, Task, AppSettings } from './types';
+import { 
+  auth, 
+  db, 
+  googleProvider, 
+  signInWithPopup, 
+  onAuthStateChanged, 
+  doc, 
+  getDoc, 
+  setDoc, 
+  updateDoc, 
+  collection, 
+  query, 
+  where, 
+  getDocs, 
+  onSnapshot, 
+  serverTimestamp, 
+  increment,
+  FirebaseUser
+} from './firebase';
 
 // --- Components ---
 
@@ -2025,10 +2045,6 @@ const AdminPanel = ({ onClose, onTasksChange }: { onClose: () => void, onTasksCh
 // --- Main App ---
 
 export default function App() {
-  useEffect(() => {
-    console.log('App mounted at:', new Date().toISOString());
-  }, []);
-
   const [activeTab, setActiveTab] = useState('home');
   const [user, setUser] = useState<User | null>(null);
   const [settings, setSettings] = useState<AppSettings>({ withdrawals_enabled: 'true', min_withdrawal: '1000' });
@@ -2037,152 +2053,150 @@ export default function App() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminCreds, setAdminCreds] = useState({ email: '', password: '' });
   const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [isAuthReady, setIsAuthReady] = useState(false);
+  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
 
-  const refreshData = async () => {
-    const userId = localStorage.getItem('telex_user_id');
-    if (!userId) return;
+  // Auth Listener
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (fbUser) => {
+      setFirebaseUser(fbUser);
+      setIsAuthReady(true);
+      if (!fbUser) {
+        setIsInitialLoading(false);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
 
+  // Sync User Profile
+  useEffect(() => {
+    if (!isAuthReady || !firebaseUser) return;
+
+    const userRef = doc(db, 'users', firebaseUser.uid);
+    
+    const unsubscribe = onSnapshot(userRef, async (snapshot) => {
+      if (snapshot.exists()) {
+        setUser(snapshot.data() as User);
+        setIsInitialLoading(false);
+      } else {
+        // Create new user profile
+        const newUser: User = {
+          id: firebaseUser.uid,
+          username: firebaseUser.displayName || `User_${firebaseUser.uid.slice(0, 4)}`,
+          coins: 0,
+          total_earned: 0,
+          join_date: new Date().toISOString(),
+          last_active: new Date().toISOString(),
+          is_blocked: false
+        };
+        await setDoc(userRef, newUser);
+        setUser(newUser);
+        setIsInitialLoading(false);
+      }
+    }, (error) => {
+      console.error("Firestore User Sync Error:", error);
+      setIsInitialLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [isAuthReady, firebaseUser]);
+
+  // Sync Settings
+  useEffect(() => {
+    const settingsRef = collection(db, 'settings');
+    const unsubscribe = onSnapshot(settingsRef, (snapshot) => {
+      const settingsObj: any = {};
+      snapshot.forEach(doc => {
+        settingsObj[doc.id] = doc.data().value;
+      });
+      if (Object.keys(settingsObj).length > 0) {
+        setSettings(prev => ({ ...prev, ...settingsObj }));
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Sync Tasks
+  useEffect(() => {
+    if (!user) return;
+    const tasksRef = collection(db, 'tasks');
+    const unsubscribe = onSnapshot(tasksRef, (snapshot) => {
+      const tasksList: Task[] = [];
+      snapshot.forEach(doc => {
+        tasksList.push({ ...doc.data(), id: doc.id } as any);
+      });
+      setTasks(tasksList);
+    });
+    return () => unsubscribe();
+  }, [user]);
+
+  const handleLogin = async () => {
     try {
-      const [userData, settingsData, tasksData] = await Promise.all([
-        fetch('/api/user/sync', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId })
-        }).then(r => r.json()),
-        fetch('/api/settings').then(r => r.json()),
-        fetch(`/api/tasks?userId=${userId}`).then(r => r.json())
-      ]);
-      
-      setUser(userData);
-      setSettings(settingsData);
-      setTasks(tasksData);
+      await signInWithPopup(auth, googleProvider);
     } catch (err) {
-      console.error('Error refreshing data:', err);
+      console.error("Login Error:", err);
     }
   };
 
+  const refreshData = async () => {
+    // With onSnapshot, data is real-time
+    console.log("Refreshing data via real-time listeners...");
+  };
+
   const [initError, setInitError] = useState<string | null>(null);
-  const initStarted = useRef(false);
 
-  useEffect(() => {
-    if (initStarted.current) return;
-    initStarted.current = true;
-
-    let userId = localStorage.getItem('telex_user_id');
-    if (!userId || userId === 'undefined' || userId === 'null' || userId.trim() === '') {
-      userId = 'user_' + Math.random().toString(36).substring(2, 15);
-      localStorage.setItem('telex_user_id', userId);
-    }
-
-    const init = async (retries = 3) => {
-      console.log(`Initializing TeleX... Attempt ${4 - retries}`);
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
-
-        const [userRes, settingsRes] = await Promise.all([
-          fetch('/api/user/sync', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId }),
-            signal: controller.signal
-          }),
-          fetch('/api/settings', { signal: controller.signal })
-        ]);
-
-        clearTimeout(timeoutId);
-
-        if (!userRes.ok || !settingsRes.ok) {
-          let errorDetail = '';
-          try {
-            const errData = !userRes.ok ? await userRes.json() : await settingsRes.json();
-            errorDetail = errData.message || errData.error || 'Unknown API error';
-          } catch (e) {
-            errorDetail = `Server Error: User(${userRes.status}) Settings(${settingsRes.status})`;
-          }
-          throw new Error(errorDetail);
-        }
-
-        const userData = await userRes.json();
-        const settingsData = await settingsRes.json();
-
-        if (userData && userData.id) {
-          console.log('Profile loaded successfully');
-          setUser(userData);
-          setSettings(settingsData);
-          setInitError(null);
-          setIsInitialLoading(false); 
-        } else {
-          throw new Error('Invalid data format received from server');
-        }
-      } catch (err: any) {
-        console.error('Init error:', err);
-        if (retries > 0) {
-          const delay = 2000 + (3 - retries) * 1000; // Exponential backoff
-          console.log(`Retrying in ${delay/1000}s... (${retries} left)`);
-          setTimeout(() => init(retries - 1), delay);
-        } else {
-          setInitError(err.name === 'AbortError' ? 'Connection timed out. The server might be busy.' : (err.message || String(err)));
-          setIsInitialLoading(false);
-        }
-      }
-    };
-
-    init();
-  }, []);
-
-  useEffect(() => {
-    const userId = localStorage.getItem('telex_user_id');
-    if (activeTab === 'tasks' && userId) {
-      fetch(`/api/tasks?userId=${userId}`).then(r => r.json()).then(setTasks);
-    }
-  }, [activeTab]);
-
-  const handleEarn = async (amount: number, reason: string, taskId?: number): Promise<boolean> => {
-    if (!user) return false;
+  const handleEarn = async (amount: number, reason: string, taskId?: string): Promise<boolean> => {
+    if (!user || !firebaseUser) return false;
     
-    const url = taskId ? '/api/tasks/complete' : '/api/user/add-coins';
-    const body = taskId ? { userId: user.id, taskId } : { userId: user.id, amount, reason };
+    const userRef = doc(db, 'users', firebaseUser.uid);
 
     try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      });
-      
-      if (res.ok) {
-        const data = await res.json();
-        const reward = taskId ? data.reward : amount;
-        setUser(prev => prev ? { 
-          ...prev, 
-          coins: prev.coins + reward, 
-          total_earned: prev.total_earned + Math.max(0, reward) 
-        } : null);
-        
-        if (taskId) {
-          setTasks(prev => prev.map(t => t.id === taskId ? { ...t, completed: 1 } : t));
+      if (taskId) {
+        // Check if already completed
+        const userTaskRef = doc(db, 'user_tasks', `${firebaseUser.uid}_${taskId}`);
+        const utSnap = await getDoc(userTaskRef);
+        if (utSnap.exists()) {
+          alert("Task already completed!");
+          return false;
         }
-        return true;
+
+        const taskRef = doc(db, 'tasks', taskId);
+        const taskSnap = await getDoc(taskRef);
+        if (!taskSnap.exists()) return false;
+        const taskData = taskSnap.data() as Task;
+
+        await setDoc(userTaskRef, {
+          user_id: firebaseUser.uid,
+          task_id: taskId,
+          completed_at: new Date().toISOString()
+        });
+
+        await updateDoc(userRef, {
+          coins: increment(taskData.reward),
+          total_earned: increment(taskData.reward),
+          last_active: new Date().toISOString()
+        });
       } else {
-        const data = await res.json();
-        alert(data.message || 'Failed to process reward');
-        return false;
+        if (user.coins + amount < 0) {
+          alert("Insufficient balance!");
+          return false;
+        }
+        await updateDoc(userRef, {
+          coins: increment(amount),
+          total_earned: increment(amount > 0 ? amount : 0),
+          last_active: new Date().toISOString()
+        });
       }
+      return true;
     } catch (err) {
       console.error("Earn error:", err);
-      alert("Connection error. Please try again.");
+      alert("Failed to process reward. Please try again.");
       return false;
     }
   };
 
   const handleAdminLogin = async () => {
-    const res = await fetch('/api/admin/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(adminCreds)
-    });
-    if (res.ok) {
+    if (adminCreds.email === "t6068422@gmail.com" && adminCreds.password === "Aass1122@") {
       setIsAdmin(true);
       setShowAdminLogin(false);
     } else {
@@ -2191,30 +2205,33 @@ export default function App() {
   };
 
   const handleDailyClaim = async () => {
-    if (!user) return false;
+    if (!user || !firebaseUser) return false;
     try {
-      const res = await fetch('/api/daily/claim', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id })
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setUser(prev => prev ? { 
-          ...prev, 
-          coins: prev.coins + data.reward, 
-          total_earned: prev.total_earned + data.reward 
-        } : null);
-        alert(`Success! You claimed ${data.reward} TLX. Streak: ${data.streak} days!`);
-        return true;
-      } else {
-        if (data.message === "Already claimed today") {
-          alert("Reward already received! Come back tomorrow.");
-        } else {
-          alert(data.message || 'Failed to claim');
-        }
+      const today = new Date().toISOString().split('T')[0];
+      const claimId = `${firebaseUser.uid}_${today}`;
+      const claimRef = doc(db, 'daily_claims', claimId);
+      const claimSnap = await getDoc(claimRef);
+      
+      if (claimSnap.exists()) {
+        alert("Reward already received! Come back tomorrow.");
         return false;
       }
+
+      const reward = 50; 
+      
+      await setDoc(claimRef, {
+        user_id: firebaseUser.uid,
+        claim_date: today,
+        streak: 1
+      });
+
+      await updateDoc(doc(db, 'users', firebaseUser.uid), {
+        coins: increment(reward),
+        total_earned: increment(reward)
+      });
+
+      alert(`Success! You claimed ${reward} TLX.`);
+      return true;
     } catch (err) {
       console.error('Daily claim error:', err);
       alert('Failed to connect to server');
@@ -2283,7 +2300,7 @@ export default function App() {
     }
   }, [settings.head_custom_code]);
 
-  if (isInitialLoading) {
+  if (isInitialLoading || !isAuthReady) {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4">
         <motion.div 
@@ -2301,6 +2318,36 @@ export default function App() {
               <span>Loading your profile...</span>
             </div>
           </div>
+        </motion.div>
+      </div>
+    );
+  }
+
+  if (!firebaseUser) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="max-w-md w-full glass p-8 rounded-[2.5rem] text-center border-white/10"
+        >
+          <div className="w-20 h-20 gradient-bg rounded-[2rem] flex items-center justify-center shadow-2xl shadow-primary/40 mx-auto mb-8">
+            <Zap className="text-white fill-white" size={40} />
+          </div>
+          <h1 className="text-3xl font-display font-bold mb-4 tracking-tight">Welcome to TeleX</h1>
+          <p className="text-white/60 mb-8 leading-relaxed">
+            Join the modern, gamified earning platform. Complete tasks, play games, and earn real TLX coins.
+          </p>
+          <button 
+            onClick={handleLogin}
+            className="w-full py-4 gradient-bg rounded-2xl font-bold text-lg flex items-center justify-center gap-3 shadow-xl shadow-primary/20 hover:scale-[1.02] transition-all"
+          >
+            <LogIn size={20} />
+            Sign in with Google
+          </button>
+          <p className="mt-6 text-[10px] text-white/30 uppercase tracking-[0.2em]">
+            Secure persistent storage powered by Firebase
+          </p>
         </motion.div>
       </div>
     );
@@ -2365,29 +2412,52 @@ export default function App() {
         <AdComponent placement="top" />
         <AnimatePresence mode="wait">
           {activeTab === 'home' && <HomePage key="home" onStart={setActiveTab} onRefresh={refreshData} />}
-          {activeTab === 'tasks' && user && <TasksPage key="tasks" tasks={tasks as any} onComplete={(t) => handleEarn(t.reward, `Task: ${t.title}`, t.id)} onRefresh={refreshData} />}
+          {activeTab === 'tasks' && user && <TasksPage key="tasks" tasks={tasks as any} onComplete={(t) => handleEarn(0, `Task: ${t.title}`, String(t.id))} onRefresh={refreshData} />}
           {activeTab === 'games' && user && <GamesPage key="games" user={user} 
             onPlay={() => handleEarn(-10, 'Game Entry')}
             onWin={(amt) => handleEarn(amt, 'Game Win')} 
           />}
           {activeTab === 'daily' && user && <DailyBonusPage key="daily" userId={user.id} onClaim={handleDailyClaim} />}
-          {activeTab === 'coupons' && user && <CouponsPage key="coupons" onRedeem={(code) => {
-            fetch('/api/coupons/redeem', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ code, userId: user.id })
-            }).then(r => r.json()).then(data => {
-              if (data.success) {
-                handleEarn(data.reward, `Coupon: ${code}`);
-                alert(`Success! You got ${data.reward} TLX`);
-              } else {
-                if (data.message === "You have already redeemed this coupon") {
-                  alert("Reward already received! This coupon can only be used once.");
-                } else {
-                  alert(data.message || 'Invalid code');
-                }
+          {activeTab === 'coupons' && user && <CouponsPage key="coupons" onRedeem={async (code) => {
+            try {
+              const couponRef = doc(db, 'coupons', code);
+              const couponSnap = await getDoc(couponRef);
+              if (!couponSnap.exists()) {
+                alert("Invalid coupon code");
+                return;
               }
-            });
+              const coupon = couponSnap.data() as any;
+              
+              const userCouponId = `${firebaseUser.uid}_${code}`;
+              const userCouponRef = doc(db, 'user_coupons', userCouponId);
+              const ucSnap = await getDoc(userCouponRef);
+              
+              if (ucSnap.exists()) {
+                alert("You have already redeemed this coupon");
+                return;
+              }
+
+              if (coupon.used_count >= coupon.usage_limit) {
+                alert("Coupon limit reached");
+                return;
+              }
+
+              await setDoc(userCouponRef, {
+                user_id: firebaseUser.uid,
+                coupon_code: code,
+                redeemed_at: new Date().toISOString()
+              });
+
+              await updateDoc(couponRef, {
+                used_count: increment(1)
+              });
+
+              await handleEarn(coupon.reward, `Coupon: ${code}`);
+              alert(`Success! You got ${coupon.reward} TLX`);
+            } catch (err) {
+              console.error("Coupon Error:", err);
+              alert("Failed to redeem coupon");
+            }
           }} />}
           {activeTab === 'withdraw' && user && <WithdrawPage key="withdraw" coins={user.coins} settings={settings} />}
         </AnimatePresence>

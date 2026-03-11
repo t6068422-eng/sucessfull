@@ -1,0 +1,95 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile and balance information",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "username": { "type": "string" },
+        "coins": { "type": "number" },
+        "total_earned": { "type": "number" },
+        "join_date": { "type": "string" },
+        "last_active": { "type": "string" },
+        "is_blocked": { "type": "boolean" },
+        "block_reason": { "type": "string" }
+      },
+      "required": ["id", "username", "coins", "total_earned"]
+    },
+    "Task": {
+      "title": "Task",
+      "description": "Earning tasks for users",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "reward": { "type": "number" },
+        "time_estimate": { "type": "string" },
+        "category": { "type": "string" },
+        "icon": { "type": "string" },
+        "active": { "type": "boolean" },
+        "link": { "type": "string" }
+      },
+      "required": ["id", "title", "reward"]
+    },
+    "Withdrawal": {
+      "title": "Withdrawal",
+      "description": "User withdrawal requests",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "user_id": { "type": "string" },
+        "username": { "type": "string" },
+        "amount": { "type": "number" },
+        "method": { "type": "string" },
+        "address": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "processing", "completed", "rejected"] },
+        "created_at": { "type": "string" }
+      },
+      "required": ["id", "user_id", "amount", "method", "address", "status"]
+    },
+    "Setting": {
+      "title": "Setting",
+      "description": "Global app settings",
+      "type": "object",
+      "properties": {
+        "key": { "type": "string" },
+        "value": { "type": "string" }
+      },
+      "required": ["key", "value"]
+    },
+    "UserTask": {
+      "title": "UserTask",
+      "description": "Record of completed tasks by users",
+      "type": "object",
+      "properties": {
+        "user_id": { "type": "string" },
+        "task_id": { "type": "string" },
+        "completed_at": { "type": "string" }
+      },
+      "required": ["user_id", "task_id"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/tasks/{taskId}": {
+      "schema": "Task",
+      "description": "Available tasks"
+    },
+    "/withdrawals/{withdrawalId}": {
+      "schema": "Withdrawal",
+      "description": "Withdrawal requests"
+    },
+    "/settings/{settingId}": {
+      "schema": "Setting",
+      "description": "Global configuration"
+    },
+    "/user_tasks/{userTaskId}": {
+      "schema": "UserTask",
+      "description": "Completed tasks log"
+    }
+  }
+}
