@@ -2130,11 +2130,23 @@ export default function App() {
     return () => unsubscribe();
   }, [user]);
 
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+
   const handleLogin = async () => {
+    if (isLoggingIn) return;
+    setIsLoggingIn(true);
     try {
       await signInWithPopup(auth, googleProvider);
-    } catch (err) {
-      console.error("Login Error:", err);
+    } catch (err: any) {
+      // Only log and alert if it's not a user cancellation
+      if (err.code !== 'auth/popup-closed-by-user') {
+        console.error("Login Error:", err);
+        alert("Login failed: " + (err.message || "Please try again."));
+      } else {
+        console.log("Login cancelled by user.");
+      }
+    } finally {
+      setIsLoggingIn(false);
     }
   };
 
@@ -2340,10 +2352,15 @@ export default function App() {
           </p>
           <button 
             onClick={handleLogin}
-            className="w-full py-4 gradient-bg rounded-2xl font-bold text-lg flex items-center justify-center gap-3 shadow-xl shadow-primary/20 hover:scale-[1.02] transition-all"
+            disabled={isLoggingIn}
+            className={`w-full py-4 gradient-bg rounded-2xl font-bold text-lg flex items-center justify-center gap-3 shadow-xl shadow-primary/20 transition-all ${isLoggingIn ? 'opacity-70 cursor-not-allowed' : 'hover:scale-[1.02]'}`}
           >
-            <LogIn size={20} />
-            Sign in with Google
+            {isLoggingIn ? (
+              <RefreshCw size={20} className="animate-spin" />
+            ) : (
+              <LogIn size={20} />
+            )}
+            {isLoggingIn ? 'Connecting...' : 'Sign in with Google'}
           </button>
           <p className="mt-6 text-[10px] text-white/30 uppercase tracking-[0.2em]">
             Secure persistent storage powered by Firebase
