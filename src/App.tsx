@@ -23,29 +23,9 @@ import {
   Zap,
   Megaphone,
   Code,
-  Save,
-  LogIn
+  Save
 } from 'lucide-react';
 import { User, Task, AppSettings } from './types';
-import { 
-  auth, 
-  db, 
-  googleProvider, 
-  signInWithPopup, 
-  onAuthStateChanged, 
-  doc, 
-  getDoc, 
-  setDoc, 
-  updateDoc, 
-  collection, 
-  query, 
-  where, 
-  getDocs, 
-  onSnapshot, 
-  serverTimestamp, 
-  increment,
-  FirebaseUser
-} from './firebase';
 
 // --- Components ---
 
@@ -141,15 +121,8 @@ const AdComponent = ({ placement }: { placement: string }) => {
   );
 };
 
-const Navbar = ({ coins, activeTab, setActiveTab, withdrawalsEnabled, onRefresh }: { coins: number, activeTab: string, setActiveTab: (t: string) => void, withdrawalsEnabled: boolean, onRefresh: () => void }) => {
+const Navbar = ({ coins, activeTab, setActiveTab, withdrawalsEnabled }: { coins: number, activeTab: string, setActiveTab: (t: string) => void, withdrawalsEnabled: boolean }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-
-  const handleRefresh = async () => {
-    setIsRefreshing(true);
-    await onRefresh();
-    setTimeout(() => setIsRefreshing(false), 1000);
-  };
 
   const navItems = [
     { id: 'home', label: 'Home', icon: Home },
@@ -197,14 +170,6 @@ const Navbar = ({ coins, activeTab, setActiveTab, withdrawalsEnabled, onRefresh 
         </div>
 
         <div className="flex items-center gap-4">
-          <button 
-            onClick={handleRefresh}
-            className={`p-2 glass rounded-full text-white/60 hover:text-white hover:bg-white/10 transition-all ${isRefreshing ? 'animate-spin text-primary' : ''}`}
-            title="Refresh Data"
-          >
-            <RefreshCw size={18} />
-          </button>
-
           <div className="flex items-center gap-2 bg-white/5 px-3 py-1.5 rounded-full border border-white/10">
             <div className="w-5 h-5 bg-yellow-500 rounded-full flex items-center justify-center">
               <Coins size={12} className="text-white" />
@@ -254,15 +219,7 @@ const Navbar = ({ coins, activeTab, setActiveTab, withdrawalsEnabled, onRefresh 
 
 // --- Pages ---
 
-const HomePage = ({ onStart, onRefresh }: { onStart: (tab: string) => void, onRefresh: () => void, key?: string }) => {
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  
-  const handleRefresh = async () => {
-    setIsRefreshing(true);
-    await onRefresh();
-    setTimeout(() => setIsRefreshing(false), 1000);
-  };
-
+const HomePage = ({ onStart }: { onStart: (tab: string) => void, key?: string }) => {
   return (
     <div className="pt-24 pb-12 px-4 max-w-7xl mx-auto">
       <div className="grid lg:grid-cols-2 gap-12 items-center min-h-[70vh]">
@@ -295,13 +252,6 @@ const HomePage = ({ onStart, onRefresh }: { onStart: (tab: string) => void, onRe
               className="px-8 py-4 glass rounded-2xl font-bold hover:bg-white/20 transition-all"
             >
               Play Games
-            </button>
-            <button 
-              onClick={handleRefresh}
-              className={`px-8 py-4 glass rounded-2xl font-bold hover:bg-white/20 transition-all flex items-center gap-2 ${isRefreshing ? 'text-primary' : ''}`}
-            >
-              <RefreshCw size={20} className={isRefreshing ? 'animate-spin' : ''} />
-              Refresh
             </button>
           </div>
 
@@ -2053,199 +2003,135 @@ export default function App() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminCreds, setAdminCreds] = useState({ email: '', password: '' });
   const [isInitialLoading, setIsInitialLoading] = useState(true);
-  const [isAuthReady, setIsAuthReady] = useState(false);
-  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
+  const [initError, setInitError] = useState<string | null>(null);
 
-  // Auth Listener
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (fbUser) => {
-      setFirebaseUser(fbUser);
-      setIsAuthReady(true);
-      if (!fbUser) {
-        setIsInitialLoading(false);
-      }
-    });
-    return () => unsubscribe();
-  }, []);
-
-  // Sync User Profile
-  useEffect(() => {
-    if (!isAuthReady || !firebaseUser) return;
-
-    const userRef = doc(db, 'users', firebaseUser.uid);
-    
-    const unsubscribe = onSnapshot(userRef, async (snapshot) => {
-      if (snapshot.exists()) {
-        setUser(snapshot.data() as User);
-        setIsInitialLoading(false);
-      } else {
-        // Create new user profile
-        const newUser: User = {
-          id: firebaseUser.uid,
-          username: firebaseUser.displayName || `User_${firebaseUser.uid.slice(0, 4)}`,
-          coins: 0,
-          total_earned: 0,
-          join_date: new Date().toISOString(),
-          last_active: new Date().toISOString(),
-          is_blocked: false
-        };
-        await setDoc(userRef, newUser);
-        setUser(newUser);
-        setIsInitialLoading(false);
-      }
-    }, (error) => {
-      console.error("Firestore User Sync Error:", error);
-      setIsInitialLoading(false);
-    });
-
-    return () => unsubscribe();
-  }, [isAuthReady, firebaseUser]);
-
-  // Sync Settings
-  useEffect(() => {
-    const settingsRef = collection(db, 'settings');
-    const unsubscribe = onSnapshot(settingsRef, (snapshot) => {
-      const settingsObj: any = {};
-      snapshot.forEach(doc => {
-        settingsObj[doc.id] = doc.data().value;
-      });
-      if (Object.keys(settingsObj).length > 0) {
-        setSettings(prev => ({ ...prev, ...settingsObj }));
-      }
-    });
-    return () => unsubscribe();
-  }, []);
-
-  // Sync Tasks
-  useEffect(() => {
-    if (!user) return;
-    const tasksRef = collection(db, 'tasks');
-    const unsubscribe = onSnapshot(tasksRef, (snapshot) => {
-      const tasksList: Task[] = [];
-      snapshot.forEach(doc => {
-        tasksList.push({ ...doc.data(), id: doc.id } as any);
-      });
-      setTasks(tasksList);
-    });
-    return () => unsubscribe();
-  }, [user]);
-
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
-
-  const handleLogin = async () => {
-    if (isLoggingIn) return;
-    setIsLoggingIn(true);
+  const fetchData = async () => {
     try {
-      await signInWithPopup(auth, googleProvider);
-    } catch (err: any) {
-      // Only log and alert if it's not a user cancellation
-      if (err.code !== 'auth/popup-closed-by-user') {
-        console.error("Login Error:", err);
-        alert("Login failed: " + (err.message || "Please try again."));
-      } else {
-        console.log("Login cancelled by user.");
+      let userId = localStorage.getItem('telex_user_id');
+      if (!userId || userId === 'undefined' || userId === 'null') {
+        userId = 'user_' + Math.random().toString(36).substr(2, 9);
+        localStorage.setItem('telex_user_id', userId);
       }
-    } finally {
-      setIsLoggingIn(false);
+      
+      const [settingsRes, tasksRes, userRes] = await Promise.all([
+        fetch('/api/settings'),
+        fetch(`/api/tasks?userId=${userId}`),
+        fetch('/api/user/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId })
+        })
+      ]);
+
+      if (!settingsRes.ok || !tasksRes.ok || !userRes.ok) throw new Error('Failed to fetch data');
+
+      const settingsData = await settingsRes.json();
+      const tasksData = await tasksRes.json();
+      const userData = await userRes.json();
+
+      setSettings(prev => ({ ...prev, ...settingsData }));
+      setTasks(tasksData);
+      setUser(userData);
+      setIsInitialLoading(false);
+    } catch (err) {
+      console.error('Initialization error:', err);
+      setInitError('Failed to connect to server');
+      setIsInitialLoading(false);
     }
   };
 
-  const refreshData = async () => {
-    // With onSnapshot, data is real-time
-    console.log("Refreshing data via real-time listeners...");
-  };
-
-  const [initError, setInitError] = useState<string | null>(null);
+  useEffect(() => {
+    fetchData();
+  }, []);
 
   const handleEarn = async (amount: number, reason: string, taskId?: string): Promise<boolean> => {
-    if (!user || !firebaseUser) return false;
-    
-    const userRef = doc(db, 'users', firebaseUser.uid);
-
+    if (!user) return false;
     try {
+      let res;
       if (taskId) {
-        // Check if already completed
-        const userTaskRef = doc(db, 'user_tasks', `${firebaseUser.uid}_${taskId}`);
-        const utSnap = await getDoc(userTaskRef);
-        if (utSnap.exists()) {
-          alert("Task already completed!");
-          return false;
-        }
-
-        const taskRef = doc(db, 'tasks', taskId);
-        const taskSnap = await getDoc(taskRef);
-        if (!taskSnap.exists()) return false;
-        const taskData = taskSnap.data() as Task;
-
-        await setDoc(userTaskRef, {
-          user_id: firebaseUser.uid,
-          task_id: taskId,
-          completed_at: new Date().toISOString()
-        });
-
-        await updateDoc(userRef, {
-          coins: increment(taskData.reward),
-          total_earned: increment(taskData.reward),
-          last_active: new Date().toISOString()
+        res = await fetch('/api/tasks/complete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: user.id, taskId })
         });
       } else {
-        if (user.coins + amount < 0) {
-          alert("Insufficient balance!");
-          return false;
-        }
-        await updateDoc(userRef, {
-          coins: increment(amount),
-          total_earned: increment(amount > 0 ? amount : 0),
-          last_active: new Date().toISOString()
+        res = await fetch('/api/user/add-coins', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: user.id, amount, reason })
         });
       }
-      return true;
+
+      const data = await res.json();
+      if (res.ok) {
+        // Refresh user data
+        const userRes = await fetch('/api/user/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: user.id })
+        });
+        const userData = await userRes.json();
+        setUser(userData);
+        
+        if (taskId) {
+          const tasksRes = await fetch(`/api/tasks?userId=${user.id}`);
+          const tasksData = await tasksRes.json();
+          setTasks(tasksData);
+        }
+        return true;
+      } else {
+        alert(data.message || 'Action failed');
+        return false;
+      }
     } catch (err) {
-      console.error("Earn error:", err);
-      alert("Failed to process reward. Please try again.");
+      alert('Failed to connect to server');
       return false;
     }
   };
 
   const handleAdminLogin = async () => {
-    if (adminCreds.email === "t6068422@gmail.com" && adminCreds.password === "Aass1122@") {
-      setIsAdmin(true);
-      setShowAdminLogin(false);
-    } else {
-      alert('Invalid admin credentials');
+    try {
+      const res = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(adminCreds)
+      });
+      const data = await res.json();
+      if (data.success) {
+        setIsAdmin(true);
+        setShowAdminLogin(false);
+      } else {
+        alert(data.message);
+      }
+    } catch (err) {
+      alert('Failed to connect to server');
     }
   };
 
   const handleDailyClaim = async () => {
-    if (!user || !firebaseUser) return false;
+    if (!user) return false;
     try {
-      const today = new Date().toISOString().split('T')[0];
-      const claimId = `${firebaseUser.uid}_${today}`;
-      const claimRef = doc(db, 'daily_claims', claimId);
-      const claimSnap = await getDoc(claimRef);
-      
-      if (claimSnap.exists()) {
-        alert("Reward already received! Come back tomorrow.");
+      const res = await fetch('/api/daily/claim', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id })
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert(`Success! You claimed ${data.reward} TLX. Streak: ${data.streak} days`);
+        const userRes = await fetch('/api/user/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: user.id })
+        });
+        const userData = await userRes.json();
+        setUser(userData);
+        return true;
+      } else {
+        alert(data.message);
         return false;
       }
-
-      const reward = 50; 
-      
-      await setDoc(claimRef, {
-        user_id: firebaseUser.uid,
-        claim_date: today,
-        streak: 1
-      });
-
-      await updateDoc(doc(db, 'users', firebaseUser.uid), {
-        coins: increment(reward),
-        total_earned: increment(reward)
-      });
-
-      alert(`Success! You claimed ${reward} TLX.`);
-      return true;
     } catch (err) {
-      console.error('Daily claim error:', err);
       alert('Failed to connect to server');
       return false;
     }
@@ -2312,7 +2198,7 @@ export default function App() {
     }
   }, [settings.head_custom_code]);
 
-  if (isInitialLoading || !isAuthReady) {
+  if (isInitialLoading) {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4">
         <motion.div 
@@ -2330,55 +2216,6 @@ export default function App() {
               <span>Loading your profile...</span>
             </div>
           </div>
-        </motion.div>
-      </div>
-    );
-  }
-
-  if (!firebaseUser) {
-    return (
-      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4">
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="max-w-md w-full glass p-8 rounded-[2.5rem] text-center border-white/10"
-        >
-          <div className="w-20 h-20 gradient-bg rounded-[2rem] flex items-center justify-center shadow-2xl shadow-primary/40 mx-auto mb-8">
-            <Zap className="text-white fill-white" size={40} />
-          </div>
-          <h1 className="text-3xl font-display font-bold mb-4 tracking-tight">Welcome to TeleX</h1>
-          <p className="text-white/60 mb-8 leading-relaxed">
-            Join the modern, gamified earning platform. Complete tasks, play games, and earn real TLX coins.
-          </p>
-          <button 
-            onClick={handleLogin}
-            disabled={isLoggingIn}
-            className={`w-full py-4 gradient-bg rounded-2xl font-bold text-lg flex items-center justify-center gap-3 shadow-xl shadow-primary/20 transition-all ${isLoggingIn ? 'opacity-70 cursor-not-allowed' : 'hover:scale-[1.02]'}`}
-          >
-            {isLoggingIn ? (
-              <RefreshCw size={20} className="animate-spin" />
-            ) : (
-              <LogIn size={20} />
-            )}
-            {isLoggingIn ? 'Connecting...' : 'Sign in with Google'}
-          </button>
-
-          <div className="mt-8 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl text-left">
-            <div className="flex items-center gap-2 text-red-400 mb-2">
-              <AlertCircle size={16} />
-              <span className="text-xs font-bold uppercase tracking-wider">Fix "Unauthorized Domain" Error</span>
-            </div>
-            <p className="text-[11px] text-white/60 mb-3 leading-relaxed">
-              If login fails, you must add this domain to your Firebase Console under <b>Authentication &gt; Settings &gt; Authorized Domains</b>:
-            </p>
-            <code className="block bg-black/40 p-2 rounded text-[10px] font-mono text-primary break-all select-all">
-              {window.location.hostname}
-            </code>
-          </div>
-
-          <p className="mt-6 text-[10px] text-white/30 uppercase tracking-[0.2em]">
-            Secure persistent storage powered by Firebase
-          </p>
         </motion.div>
       </div>
     );
@@ -2436,14 +2273,13 @@ export default function App() {
         activeTab={activeTab} 
         setActiveTab={setActiveTab} 
         withdrawalsEnabled={settings.withdrawals_enabled === 'true'}
-        onRefresh={refreshData}
       />
 
       <main>
         <AdComponent placement="top" />
         <AnimatePresence mode="wait">
-          {activeTab === 'home' && <HomePage key="home" onStart={setActiveTab} onRefresh={refreshData} />}
-          {activeTab === 'tasks' && user && <TasksPage key="tasks" tasks={tasks as any} onComplete={(t) => handleEarn(0, `Task: ${t.title}`, String(t.id))} onRefresh={refreshData} />}
+          {activeTab === 'home' && <HomePage key="home" onStart={setActiveTab} />}
+          {activeTab === 'tasks' && user && <TasksPage key="tasks" tasks={tasks as any} onComplete={(t) => handleEarn(0, `Task: ${t.title}`, String(t.id))} onRefresh={fetchData} />}
           {activeTab === 'games' && user && <GamesPage key="games" user={user} 
             onPlay={() => handleEarn(-10, 'Game Entry')}
             onWin={(amt) => handleEarn(amt, 'Game Win')} 
@@ -2451,42 +2287,25 @@ export default function App() {
           {activeTab === 'daily' && user && <DailyBonusPage key="daily" userId={user.id} onClaim={handleDailyClaim} />}
           {activeTab === 'coupons' && user && <CouponsPage key="coupons" onRedeem={async (code) => {
             try {
-              const couponRef = doc(db, 'coupons', code);
-              const couponSnap = await getDoc(couponRef);
-              if (!couponSnap.exists()) {
-                alert("Invalid coupon code");
-                return;
-              }
-              const coupon = couponSnap.data() as any;
-              
-              const userCouponId = `${firebaseUser.uid}_${code}`;
-              const userCouponRef = doc(db, 'user_coupons', userCouponId);
-              const ucSnap = await getDoc(userCouponRef);
-              
-              if (ucSnap.exists()) {
-                alert("You have already redeemed this coupon");
-                return;
-              }
-
-              if (coupon.used_count >= coupon.usage_limit) {
-                alert("Coupon limit reached");
-                return;
-              }
-
-              await setDoc(userCouponRef, {
-                user_id: firebaseUser.uid,
-                coupon_code: code,
-                redeemed_at: new Date().toISOString()
+              const res = await fetch('/api/coupons/redeem', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ code, userId: user.id })
               });
-
-              await updateDoc(couponRef, {
-                used_count: increment(1)
-              });
-
-              await handleEarn(coupon.reward, `Coupon: ${code}`);
-              alert(`Success! You got ${coupon.reward} TLX`);
+              const data = await res.json();
+              if (res.ok) {
+                alert(`Success! You got ${data.reward} TLX`);
+                const userRes = await fetch('/api/user/sync', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ userId: user.id })
+                });
+                const userData = await userRes.json();
+                setUser(userData);
+              } else {
+                alert(data.message);
+              }
             } catch (err) {
-              console.error("Coupon Error:", err);
               alert("Failed to redeem coupon");
             }
           }} />}
@@ -2555,23 +2374,9 @@ export default function App() {
         onClose={() => {
           setIsAdmin(false);
           // Refresh main app data when admin panel closes
-          const userId = localStorage.getItem('telex_user_id');
-          if (userId) {
-            fetch(`/api/tasks?userId=${userId}`).then(r => r.json()).then(setTasks);
-            fetch('/api/settings').then(r => r.json()).then(setSettings);
-            fetch('/api/user/sync', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ userId })
-            }).then(r => r.json()).then(setUser);
-          }
+          fetchData();
         }}
-        onTasksChange={() => {
-          const userId = localStorage.getItem('telex_user_id');
-          if (userId) {
-            fetch(`/api/tasks?userId=${userId}`).then(r => r.json()).then(setTasks);
-          }
-        }}
+        onTasksChange={fetchData}
       />}
 
       {/* Background Decoration */}
