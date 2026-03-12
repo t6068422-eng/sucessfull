@@ -2369,7 +2369,7 @@ export default function App() {
               <span className="text-xs font-bold uppercase tracking-wider">Fix "Unauthorized Domain" Error</span>
             </div>
             <p className="text-[11px] text-white/60 mb-3 leading-relaxed">
-              If login fails, you must add this domain to your Firebase Console under <b>Authentication > Settings > Authorized Domains</b>:
+              If login fails, you must add this domain to your Firebase Console under <b>Authentication &gt; Settings &gt; Authorized Domains</b>:
             </p>
             <code className="block bg-black/40 p-2 rounded text-[10px] font-mono text-primary break-all select-all">
               {window.location.hostname}
